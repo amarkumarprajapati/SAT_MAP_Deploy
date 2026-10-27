@@ -1,0 +1,38 @@
+{
+  "name": "sat-map",
+  "version": "1.0.0",
+  "description": "SAT Map Desktop Application",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.sat.map",
+    "productName": "SAT Map",
+    "win": {
+      "target": ["nsis"]
+    },
+    "files": [
+      "main.js"
+    ],
+    "extraResources": [
+      { "from": "../SAT_Build/internal/dist/backend", "to": "backend" },
+      { "from": "../SAT_Build/internal/dist/osint", "to": "osint" },
+      { "from": "../SAT_Build/internal/dist/frontend", "to": "frontend" },
+      { "from": "../SAT_Build/internal/dist/node", "to": "node" }
+    ],
+    "nsis": {
+      "artifactName": "SAT Map Setup.exe",
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}
