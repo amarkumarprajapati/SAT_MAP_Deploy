@@ -238,6 +238,25 @@ const EMPTY_FC = { type: "FeatureCollection" as const, features: [] };
 const DOUBLE_RIGHT_MS = 500;
 const DOUBLE_RIGHT_SLOP_PX = 12;
 
+function buildSatelliteHorizonCone(lng: number, lat: number, alt: number) {
+  const footprint = generateFootprintFeatures({ lng, lat, alt });
+  const boundary = footprint.features.find(
+    (feature) => feature.geometry.type === "LineString",
+  );
+  if (!boundary || boundary.geometry.type !== "LineString") return [];
+  const ring = boundary.geometry.coordinates;
+  const satellite = { lng, lat, altKm: alt };
+  const groundRing = ring.map(([pointLng, pointLat]) => ({
+    lng: pointLng,
+    lat: pointLat,
+    altKm: 0,
+  }));
+  const spokes = groundRing
+    .filter((_, index) => index % 12 === 0)
+    .map((point) => [satellite, point]);
+  return [...spokes, groundRing];
+}
+
 function LTmap({
   data,
   activeLayers,
@@ -1009,6 +1028,11 @@ function LTmap({
     satId: string;
   } | null>(null);
   const [selectedSat, setSelectedSat] = useState<SatelliteDetail | null>(null);
+  const [showSatCircumference, setShowSatCircumference] = useState(false);
+  const showSatCircumferenceRef = useRef(false);
+  useEffect(() => {
+    showSatCircumferenceRef.current = showSatCircumference;
+  }, [showSatCircumference]);
   const selectedSatRef = useRef<SatelliteDetail | null>(null);
   useEffect(() => {
     selectedSatRef.current = selectedSat;
@@ -1265,6 +1289,7 @@ function LTmap({
     satLayerRef.current?.setSelected(null);
     satLayerRef.current?.setOrbit(null);
     setSelectedSat(null);
+    setShowSatCircumference(false);
     setSatPlaybackOpen(false);
     setSatPlaybackPlaying(false);
     setSatPlaybackTime(null);
@@ -2492,6 +2517,18 @@ function LTmap({
 
   useEffect(() => {
     if (!mapReady) return;
+    if (!showSatCircumference || !selectedSat || selectedSat.lat == null || selectedSat.lng == null || selectedSat.alt == null) {
+      satLayerRef.current?.setCone(null);
+      return;
+    }
+    satLayerRef.current?.setCone(
+      buildSatelliteHorizonCone(selectedSat.lng, selectedSat.lat, selectedSat.alt),
+      parseColor(selectedSat.color),
+    );
+  }, [showSatCircumference, selectedSat, mapReady]);
+
+  useEffect(() => {
+    if (!mapReady) return;
     const toFeatures = (arr: unknown, decimate: number = 1) => {
       let filtered = Array.isArray(arr) ? arr : [];
       if (decimate > 1) {
@@ -3198,6 +3235,12 @@ function LTmap({
             color,
           });
           setGeo("sat-footprint", footprint.features);
+          if (showSatCircumferenceRef.current) {
+            satLayerRef.current?.setCone(
+              buildSatelliteHorizonCone(pos.lng, pos.lat, pos.altKm),
+              parseColor(color),
+            );
+          }
         }
         const nowWallClock = performance.now();
         const updateTelemetry =
@@ -3935,6 +3978,8 @@ function LTmap({
         <SatelliteCard
           sat={{ ...selectedSat, shipCardOpen: Boolean(selectedShip) }}
           onClose={clearSat}
+          onToggleCircumference={() => setShowSatCircumference((visible) => !visible)}
+          isCircumferenceActive={showSatCircumference}
           onTogglePlayback={() => {
             setSatPlaybackOpen((open) => {
               const next = !open;

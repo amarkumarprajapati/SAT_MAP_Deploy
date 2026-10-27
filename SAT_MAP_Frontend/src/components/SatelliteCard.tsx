@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { FileText, X, Crosshair, Route } from 'lucide-react';
+import { FileText, X, Crosshair, Route, Circle } from 'lucide-react';
 import SatelliteIcon from './SatelliteIcon';
 import { fetchSatelliteWikiSummary } from '@/lib/satellite-intel';
 
@@ -100,6 +100,8 @@ export default function SatelliteCard({
   onOpenSlider,
   onFocusTrack,
   onTogglePlayback,
+  onToggleCircumference,
+  isCircumferenceActive = false,
   isPlaybackActive = false,
 }: {
   sat: SatelliteDetail;
@@ -108,6 +110,8 @@ export default function SatelliteCard({
   onOpenSlider?: () => void;
   onFocusTrack?: () => void;
   onTogglePlayback?: () => void;
+  onToggleCircumference?: () => void;
+  isCircumferenceActive?: boolean;
   isPlaybackActive?: boolean;
 }) {
   const accent = colorSafe(sat.color);
@@ -240,6 +244,7 @@ export default function SatelliteCard({
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0 -mr-1 -mt-1">
+          {onToggleCircumference && <button type="button" onClick={onToggleCircumference} className={`p-1.5 rounded-lg transition-colors ${isCircumferenceActive ? 'text-cyan-200 bg-cyan-500/15' : 'text-slate-400 hover:text-cyan-300 hover:bg-white/10'}`} title={isCircumferenceActive ? 'Hide 3D satellite horizon view' : 'Show 3D satellite horizon view'} aria-label="Toggle 3D satellite horizon view" aria-pressed={isCircumferenceActive}><Circle className="h-3.5 w-3.5" /></button>}
           {onTogglePlayback && <button type="button" onClick={onTogglePlayback} className={`p-1.5 rounded-lg transition-colors ${isPlaybackActive ? 'text-cyan-200 bg-cyan-500/15' : 'text-slate-400 hover:text-cyan-300 hover:bg-white/10'}`} title={isPlaybackActive ? 'Hide orbital playback controls' : 'Show orbital playback controls'} aria-label="Toggle satellite track playback"><Route className="h-3.5 w-3.5" /></button>}
           {onFocusTrack && (
             <button

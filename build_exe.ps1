@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 $ErrorActionPreference = 'Stop'
 
 $RootDir = $PSScriptRoot
@@ -78,7 +78,7 @@ try {
 }
 
 Write-Host 'Building Next.js frontend...'
-Push-Location (Join-Path $RootDir 'SAT_MAP')
+Push-Location (Join-Path $RootDir 'SAT_MAP_Frontend')
 try {
     Invoke-Native (Get-Command npm.cmd).Source @('install')
     Invoke-Native (Get-Command npm.cmd).Source @('run', 'build')

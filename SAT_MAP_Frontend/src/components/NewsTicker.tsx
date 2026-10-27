@@ -85,12 +85,7 @@ export default function NewsTicker({ onFlyToLocation }: NewsTickerProps) {
       onMouseLeave={() => setIsPaused(false)}
       className="fixed bottom-0 left-0 right-0 z-210 w-full h-7 sm:h-7.5 bg-[#050811]/95 border-t border-cyan-500/20 backdrop-blur-2xl flex items-center select-none pointer-events-auto overflow-hidden transition-all"
     >
-      {/* ── 2. CHANNEL / TV SUB-HEADER TAG ── */}
-      <div className="hidden md:flex items-center gap-1.5 h-full px-2.5 bg-[#090e1c] border-r border-white/10 text-cyan-400 font-mono text-[9px] font-bold tracking-widest uppercase flex-shrink-0 z-20">
-        <Radio size={11} className="text-cyan-400 animate-pulse" />
-        <span className="text-cyan-300">OSINT {streamStatus.toUpperCase()}</span>
-      </div>
-
+    
       {/* ── 3. TV NEWS CRAWL TRACK (HORIZONTAL MOVING LINE) ── */}
       <div className="relative flex-1 overflow-hidden h-full flex items-center">
         {/* Edge Fade Gradients */}
@@ -191,28 +186,7 @@ export default function NewsTicker({ onFlyToLocation }: NewsTickerProps) {
         </div>
       </div>
 
-      {/* ── 4. RIGHT TV CONTROLS & STATUS BADGE ── */}
-      <div className="flex items-center gap-2 pl-2.5 pr-3 h-full bg-[#050811] border-l border-white/10 flex-shrink-0 z-20">
-        {/* Pause/Play Quick Toggle */}
-        <button
-          type="button"
-          onClick={() => setIsPaused((p) => !p)}
-          title={isPaused ? "Resume news ticker" : "Pause news ticker"}
-          className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
-        >
-          {isPaused ? (
-            <Play size={11} className="text-amber-300 fill-amber-300" />
-          ) : (
-            <Pause size={11} />
-          )}
-        </button>
-
-        {/* Status: 🟢 ONLINE */}
-        <div className="flex items-center gap-1.5 font-mono text-[9px] font-bold text-emerald-400 tracking-wider">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981] animate-pulse" />
-          <span>ONLINE</span>
-        </div>
-      </div>
+    
     </footer>
   );
 }
