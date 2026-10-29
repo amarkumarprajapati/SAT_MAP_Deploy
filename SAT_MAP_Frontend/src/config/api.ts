@@ -72,11 +72,11 @@ export function getApiUrl(endpoint: string): string {
 export const api = {
   health: () => getApiUrl(API_ENDPOINTS.HEALTH),
   flights: () => getApiUrl(API_ENDPOINTS.FLIGHTS),
-  maritime: (types?: string[], bounds?: { west: number; south: number; east: number; north: number }, includePorts = true) => {
+  maritime: (types?: string[], bounds?: { west: number; south: number; east: number; north: number }, includePorts = true, includeShips = Boolean(types?.length)) => {
     const params = new URLSearchParams();
     if (types?.length) params.set('types', types.join(','));
     params.set('include_ports', String(includePorts));
-    params.set('include_ships', String(Boolean(types?.length)));
+    params.set('include_ships', String(includeShips));
     if (bounds) {
       params.set('west', String(bounds.west));
       params.set('south', String(bounds.south));

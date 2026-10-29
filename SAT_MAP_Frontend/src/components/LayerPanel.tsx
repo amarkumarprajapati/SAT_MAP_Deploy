@@ -170,6 +170,10 @@ function LayerPanel({
 
   const getCount = (dk: string, catKey?: string): number | null => {
     if (!dk) return null;
+    if (dk === 'satellites' && catKey) {
+      const satelliteCounts = data.satellite_category_counts as Record<string, number> | undefined;
+      return satelliteCounts?.[catKey] ?? 0;
+    }
     const catCounts = (data.category_counts || {}) as Record<string, number>;
     if (dk === 'maritime_ships') {
       if (catKey && typeof catCounts[catKey] === 'number') {

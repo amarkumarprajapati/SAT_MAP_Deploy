@@ -44,7 +44,7 @@ export async function proxyApiRequest(request: NextRequest, path: string[]) {
     if (isMapAsset) {
       responseHeaders.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
     } else if (['GET', 'HEAD'].includes(request.method)) {
-      if (!responseHeaders.has('Cache-Control') || responseHeaders.get('Cache-Control')?.includes('no-store')) {
+      if (!responseHeaders.has('Cache-Control')) {
         responseHeaders.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
       }
     }

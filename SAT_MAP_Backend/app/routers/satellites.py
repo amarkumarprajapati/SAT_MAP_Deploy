@@ -164,6 +164,7 @@ async def get_satellites(
 
         now = datetime.now(timezone.utc)
         satellites = []
+        category_counts: dict[str, int] = {}
         selected_categories = (
             {category.strip().lower() for category in categories.split(",") if category.strip()}
             if categories
@@ -174,11 +175,14 @@ async def get_satellites(
         for sat in all_sats:
             info = _classify_satellite(sat["name"])
             category = _get_category(sat["name"], info["mission"])
-            if category not in selected_categories:
+            if category not in ALLOWED_CATEGORIES:
                 continue
 
             pos = propagate_tle(sat["line1"], sat["line2"], now)
             if not pos:
+                continue
+            category_counts[category] = category_counts.get(category, 0) + 1
+            if category not in selected_categories:
                 continue
             if use_bounds:
                 if abs(east - west) >= 360:
@@ -203,11 +207,6 @@ async def get_satellites(
                 "line1": sat["line1"],
                 "line2": sat["line2"],
             })
-
-        category_counts: dict[str, int] = {}
-        for s in satellites:
-            cat = s["category"]
-            category_counts[cat] = category_counts.get(cat, 0) + 1
 
         cache_ctl = "no-store, max-age=0"
 

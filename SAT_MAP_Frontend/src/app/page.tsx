@@ -378,8 +378,14 @@ export default function Dashboard() {
   const [satellitesAt, setSatellitesAt] = useState<string | number | null>(
     null,
   );
+  const [satelliteCategoryCounts, setSatelliteCategoryCounts] = useState<
+    Record<string, number>
+  >({});
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [maritimeShips, setMaritimeShips] = useState<any[]>([]);
+  // Unbounded AIS snapshot used only for the selected satellite's horizon count.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [satelliteMaritimeShips, setSatelliteMaritimeShips] = useState<any[] | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [maritimePorts, setMaritimePorts] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -433,6 +439,7 @@ export default function Dashboard() {
     useState<LocationTimeInfo | null>(null);
   const [selectedSatellite, setSelectedSatellite] =
     useState<SatelliteDetail | null>(null);
+  const satelliteShipsRequestRef = useRef<string | null>(null);
   const [clearSatTrigger, setClearSatTrigger] = useState(0);
   const [intelOpenTrigger] = useState(0);
   const [isIntelOpen, setIsIntelOpen] = useState(false);
@@ -902,7 +909,7 @@ export default function Dashboard() {
       activeLayers.sat_navigation ? "navigation" : null,
       activeLayers.sat_earth ? "earth_obs" : null,
     ].filter((value): value is string => Boolean(value));
-    if (!activeLayers.satellites || categories.length === 0) {
+    if (categories.length === 0) {
       setSatellites([]);
       setSatellitesAt(null);
       return true;
@@ -915,6 +922,7 @@ export default function Dashboard() {
         setSatellites(
           Array.isArray(res.data.satellites) ? res.data.satellites : [],
         );
+        setSatelliteCategoryCounts(res.data.category_counts ?? {});
         setSatellitesAt(res.data.timestamp ?? null);
         setBackendStatus("connected");
         setBackendError("");
@@ -933,7 +941,6 @@ export default function Dashboard() {
       return false;
     }
   }, [
-    activeLayers.satellites,
     activeLayers.sat_military,
     activeLayers.sat_navigation,
     activeLayers.sat_earth,
@@ -1095,7 +1102,9 @@ export default function Dashboard() {
       return;
     }
     const timer = window.setTimeout(() => {
-      if (activeLayers.satellites) void fetchersRef.current.fetchSatellites();
+      if (activeLayers.sat_military || activeLayers.sat_navigation || activeLayers.sat_earth) {
+        void fetchersRef.current.fetchSatellites();
+      }
       void fetchersRef.current.fetchMaritime();
     }, 250);
     return () => window.clearTimeout(timer);
@@ -1190,7 +1199,7 @@ export default function Dashboard() {
         ? new URL("/api/maritime/stream", apiBase)
         : new URL(
             "/api/maritime/stream",
-            `${window.location.protocol}//${window.location.hostname}:8000`,
+            `${window.location.protocol}//${window.location.hostname}:8569`,
           );
       stream.protocol = stream.protocol === "https:" ? "wss:" : "ws:";
       const socket = new WebSocket(stream.toString());
@@ -1311,7 +1320,9 @@ export default function Dashboard() {
       military_flights: militaryFlights,
       satellites,
       satellites_at: satellitesAt,
+      satellite_category_counts: satelliteCategoryCounts,
       maritime_ships: maritimeShips,
+      satellite_maritime_ships: satelliteMaritimeShips,
       maritime_ports: maritimePorts,
       maritime_chokepoints: maritimeChokepoints,
       category_counts: categoryCounts,
@@ -1323,7 +1334,9 @@ export default function Dashboard() {
       militaryFlights,
       satellites,
       satellitesAt,
+      satelliteCategoryCounts,
       maritimeShips,
+      satelliteMaritimeShips,
       maritimePorts,
       maritimeChokepoints,
       categoryCounts,
@@ -1360,7 +1373,24 @@ export default function Dashboard() {
           onCountryClick={setSelectedCountryTime}
           onSatelliteSelect={(sat) => {
             setSelectedSatellite(sat);
+            if (sat?.noradId && satelliteShipsRequestRef.current !== sat.noradId) {
+              satelliteShipsRequestRef.current = sat.noradId;
+              setSatelliteMaritimeShips(null);
+              void apiClient
+                .get(api.maritime(undefined, undefined, false, true))
+                .then((res) => {
+                  setSatelliteMaritimeShips(
+                    Array.isArray(res.data?.ships) ? res.data.ships : [],
+                  );
+                })
+                .catch((error) => {
+                  console.warn("[L&T] Satellite AIS snapshot failed:", error);
+                  setSatelliteMaritimeShips([]);
+                });
+            }
             if (!sat) {
+              satelliteShipsRequestRef.current = null;
+              setSatelliteMaritimeShips(null);
               setIsIntelOpen(false);
               setIsSliderOpen(false);
             }

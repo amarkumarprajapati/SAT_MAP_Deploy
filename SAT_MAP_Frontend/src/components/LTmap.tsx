@@ -1027,6 +1027,7 @@ function LTmap({
     lat: number;
     lng: number;
     satId: string;
+    ships: unknown;
   } | null>(null);
   const [selectedSat, setSelectedSat] = useState<SatelliteDetail | null>(null);
   const [showSatCircumference, setShowSatCircumference] = useState(false);
@@ -2543,6 +2544,7 @@ function LTmap({
 
   useEffect(() => {
     if (!mapReady) return;
+    if (satPlaybackPlaying) return;
     if (!showSatCircumference || !selectedSat || selectedSat.lat == null || selectedSat.lng == null || selectedSat.alt == null) {
       satLayerRef.current?.setCone(null);
       return;
@@ -2551,7 +2553,7 @@ function LTmap({
       buildSatelliteHorizonCone(selectedSat.lng, selectedSat.lat, selectedSat.alt),
       parseColor(selectedSat.color),
     );
-  }, [showSatCircumference, selectedSat, mapReady]);
+  }, [showSatCircumference, selectedSat, mapReady, satPlaybackPlaying]);
 
   useEffect(() => {
     if (!mapReady) return;
@@ -2777,13 +2779,16 @@ function LTmap({
   const selectedSatAlt = selectedSat?.alt;
 
   useEffect(() => {
+    const shipSource = Array.isArray(data.satellite_maritime_ships)
+      ? data.satellite_maritime_ships
+      : data.maritime_ships;
     if (
       !mapReady ||
       !selectedSatId ||
       selectedSatLat == null ||
       selectedSatLng == null ||
       selectedSatAlt == null ||
-      !Array.isArray(data.maritime_ships)
+      !Array.isArray(shipSource)
     ) {
       lastSatShipsCalcRef.current = null;
       setGeo("sat-ships-in-view", []);
@@ -2802,6 +2807,7 @@ function LTmap({
     if (
       prevCalc &&
       prevCalc.satId === selectedSatId &&
+      prevCalc.ships === shipSource &&
       now - prevCalc.time < 1500 &&
       Math.abs(selectedSatLat - prevCalc.lat) < 0.04 &&
       Math.abs(selectedSatLng - prevCalc.lng) < 0.04
@@ -2813,6 +2819,7 @@ function LTmap({
       lat: selectedSatLat,
       lng: selectedSatLng,
       satId: selectedSatId,
+      ships: shipSource,
     };
 
     const earthKm = 6371;
@@ -2822,7 +2829,7 @@ function LTmap({
     const satLatRad = selectedSatLat * toRad;
     const cosSatLat = Math.cos(satLatRad);
 
-    const ships = (data.maritime_ships || []) as Array<Record<string, unknown>>;
+    const ships = shipSource as Array<Record<string, unknown>>;
     const coveredFeatures: GeoJSON.Feature[] = [];
     const shipSummary: NonNullable<SatelliteDetail["inViewShips"]> = [];
     const typeCounts = { all: 0, cargo: 0, tanker: 0, military: 0 };
@@ -2957,6 +2964,7 @@ function LTmap({
     selectedSatLng,
     selectedSatAlt,
     data.maritime_ships,
+    data.satellite_maritime_ships,
     setGeo,
   ]);
 
@@ -3269,8 +3277,10 @@ function LTmap({
           }
         }
         const nowWallClock = performance.now();
+        const playbackActive = satPlaybackTimeRef.current != null;
         const updateTelemetry =
-          nowWallClock - lastSelectedPositionUiUpdateRef.current >= 300;
+          nowWallClock - lastSelectedPositionUiUpdateRef.current >=
+          (playbackActive ? 50 : 300);
         const telemetry = updateTelemetry && row.line1 && row.line2
           ? propagateTelemetry(row.line1, row.line2, time)
           : null;
@@ -3335,7 +3345,7 @@ function LTmap({
         updateSatellitePositions();
       }
       if (satPlaybackTimeRef.current != null && !satPlaybackPlaying) return;
-      timer = setTimeout(update, 100);
+      timer = setTimeout(update, satPlaybackPlaying ? 50 : 100);
     };
     update();
     return () => clearTimeout(timer);
@@ -3874,68 +3884,7 @@ function LTmap({
     };
   }, [selectedSat?.noradId, satPlaybackTime, projection]);
 
-  useEffect(() => {
-    const satelliteId = selectedSat?.noradId;
-    if (!satelliteId) return;
-    let cancelled = false;
-    let controller: AbortController | null = null;
-    let requestPending = false;
-    const lookup = () => {
-      const current = selectedSatRef.current;
-      if (
-        requestPending ||
-        !current ||
-        current.noradId !== satelliteId ||
-        current.lat == null ||
-        current.lng == null
-      ) return;
-      requestPending = true;
-      const requestController = new AbortController();
-      controller = requestController;
-      fetch(api.reverseGeocode(current.lat, current.lng), {
-        signal: requestController.signal,
-      })
-        .then((response) => (response.ok ? response.json() : null))
-        .then((result) => {
-          if (cancelled || !result || result.geocodeUnavailable) return;
-          const parts = [
-            result.locality,
-            result.principalSubdivision,
-            result.countryName,
-          ].filter(Boolean);
-          const country =
-            parts.length > 0
-              ? parts.join(", ")
-              : result.countryName || "Over ocean / unknown";
-          const locationWiki = result.wikipedia?.extract
-            ? {
-                title: result.wikipedia.title,
-                extract: result.wikipedia.extract,
-                thumbnailUrl: result.wikipedia.thumbnailUrl,
-                wikiUrl: result.wikipedia.wikiUrl,
-              }
-            : null;
-          setSelectedSat((prev) =>
-            prev && prev.noradId === satelliteId
-              ? { ...prev, country, locationWiki }
-              : prev,
-          );
-        })
-        .catch(() => {})
-        .finally(() => {
-          requestPending = false;
-        });
-    };
-    lookup();
-    // Position state updates several times per second during playback; the
-    // geocoder only needs a fresh location every 10 seconds.
-    const interval = setInterval(lookup, 10_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-      controller?.abort();
-    };
-  }, [selectedSat?.noradId]);
+
 
   const handleSelectShipFromSlider = useCallback(
     (ship: NonNullable<SatelliteDetail["inViewShips"]>[number]) => {

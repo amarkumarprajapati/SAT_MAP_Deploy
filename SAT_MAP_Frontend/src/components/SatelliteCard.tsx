@@ -17,12 +17,6 @@ export interface SatelliteDetail {
   category?: string;
   noradId?: string;
   country?: string;
-  locationWiki?: {
-    title?: string;
-    extract?: string;
-    thumbnailUrl?: string | null;
-    wikiUrl?: string;
-  } | null;
   countryCode?: string | null;
   flag?: string;
   timeZone?: string;
@@ -78,9 +72,9 @@ function speedKmS(altKm: number, periodMinutes: number): number {
 
 function period(minutes: number): string {
   if (minutes < 100) return `${minutes.toFixed(1)} min`;
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes - h * 60);
-  return `${h}h ${String(m).padStart(2, '0')}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = Math.round(minutes - hours * 60);
+  return `${hours}h ${String(remainingMinutes).padStart(2, '0')}m`;
 }
 
 function heading(degrees: number): string {
@@ -136,8 +130,8 @@ export default function SatelliteCard({
 
   const isCurrent = imageState.satName === sat.name;
   const isImageLoading = !isCurrent || imageState.isLoading;
-  const imageUrl = sat.locationWiki?.thumbnailUrl || (isCurrent ? imageState.url : null);
-  const imageTitle = sat.locationWiki?.title || (isCurrent ? imageState.title : null);
+  const imageUrl = isCurrent ? imageState.url : null;
+  const imageTitle = isCurrent ? imageState.title : null;
   const missionSummary = isCurrent ? imageState.extract : null;
   const missionWikiUrl = isCurrent ? imageState.wikiUrl : null;
 
@@ -206,44 +200,19 @@ export default function SatelliteCard({
       aria-label={`Satellite ${sat.name}`}
     >
       {/* Header bar */}
-      <div className="flex items-start justify-between gap-2 px-3.5 pt-3.5 pb-2.5 border-b border-white/5 bg-white/[0.02]">
-        <div className="flex items-start gap-2.5 min-w-0">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/5 bg-white/[0.02]">
+        <div className="flex min-w-0 items-center gap-2">
           <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+            className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{ background: `${accent}15`, border: `1px solid ${accent}40` }}
           >
-            <SatelliteIcon className="w-5 h-5" accent={accent} hasBlink={true} blinkColor="red" rotation={sat.headingDeg ?? 0} />
+            <SatelliteIcon className="w-4 h-4" accent={accent} hasBlink={true} blinkColor="red" rotation={sat.headingDeg ?? 0} />
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <h3 className="truncate text-sm font-bold tracking-wider font-mono text-white" title={sat.name}>
-                {sat.name}
-              </h3>
-              <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded font-semibold tracking-wider bg-white/5 border border-white/10 text-slate-300 flex-shrink-0">
-                {shell.label}
-              </span>
-              {sat.category && (
-                <span
-                  className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded font-semibold tracking-wider bg-white/5 border flex-shrink-0"
-                  style={{ borderColor: `${accent}50`, color: accent }}
-                >
-                  {sat.category.replace('_', ' ')}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center justify-between gap-1 text-[10px] font-mono tracking-normal mt-0.5">
-              <span className="truncate text-slate-400 font-sans">
-                {sat.mission || 'Active Orbital Payload'}
-              </span>
-              <span className="text-cyan-300 font-bold tabular-nums flex items-center gap-1 flex-shrink-0 drop-shadow-[0_0_6px_rgba(0,229,255,0.25)]">
-                <span className="text-[8px] text-slate-500 font-semibold tracking-wider">SAT TIME</span>
-                <span>{satTime}</span>
-              </span>
-            </div>
-          </div>
+          <h3 className="truncate text-xs font-bold tracking-wider font-mono text-white" title={sat.name}>
+            {sat.name}
+          </h3>
         </div>
-
-        <div className="flex items-center gap-1 flex-shrink-0 -mr-1 -mt-1">
+        <div className="flex items-center gap-1 flex-shrink-0">
           {onToggleCircumference && <button type="button" onClick={onToggleCircumference} className={`p-1.5 rounded-lg transition-colors ${isCircumferenceActive ? 'text-cyan-200 bg-cyan-500/15' : 'text-slate-400 hover:text-cyan-300 hover:bg-white/10'}`} title={isCircumferenceActive ? 'Hide 3D satellite horizon view' : 'Show 3D satellite horizon view'} aria-label="Toggle 3D satellite horizon view" aria-pressed={isCircumferenceActive}><Circle className="h-3.5 w-3.5" /></button>}
           {onTogglePlayback && <button type="button" onClick={onTogglePlayback} className={`p-1.5 rounded-lg transition-colors ${isPlaybackActive ? 'text-cyan-200 bg-cyan-500/15' : 'text-slate-400 hover:text-cyan-300 hover:bg-white/10'}`} title={isPlaybackActive ? 'Hide orbital playback controls' : 'Show orbital playback controls'} aria-label="Toggle satellite track playback"><Route className="h-3.5 w-3.5" /></button>}
           {onFocusTrack && (
@@ -323,51 +292,40 @@ export default function SatelliteCard({
         </div>
       )}
 
-      {(missionSummary || sat.locationWiki?.extract) && (
-        <div className="border-b border-white/10 bg-slate-900/70 px-3.5 py-3">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-[9px] font-mono font-bold tracking-widest text-cyan-300 uppercase">
-              {sat.locationWiki?.title || imageTitle || 'MISSION INTEL'} · Wikipedia
-            </span>
-            {(sat.locationWiki?.wikiUrl || missionWikiUrl) && (
-              <a href={sat.locationWiki?.wikiUrl || missionWikiUrl || '#'} target="_blank" rel="noreferrer" className="flex-shrink-0 text-[9px] font-mono text-cyan-200 underline underline-offset-2 hover:text-white">
-                READ ARTICLE
-              </a>
-            )}
-          </div>
-          <p className="text-[10px] leading-relaxed text-slate-300 line-clamp-4">
-            {sat.locationWiki?.extract || missionSummary}
-          </p>
+      <div className="border-b border-white/10 bg-slate-900/70 px-3 py-2">
+        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+          <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded border border-white/10 text-slate-300">{shell.label}</span>
+          {sat.category && <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded border" style={{ borderColor: `${accent}50`, color: accent }}>{sat.category.replace('_', ' ')}</span>}
+          <span className="ml-auto text-[9px] font-mono text-cyan-300">{satTime}</span>
+        </div>
+        <p className="text-[10px] font-semibold text-slate-200">{sat.mission || 'Active Orbital Payload'}</p>
+        {missionSummary && <p className="mt-1 text-[9px] leading-snug text-slate-400 line-clamp-2">{missionSummary}</p>}
+      </div>
+
+      {missionWikiUrl && (
+        <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
+          <span className="truncate text-[8px] font-mono tracking-wider text-cyan-300">SATELLITE DATA</span>
+          <a href={missionWikiUrl} target="_blank" rel="noreferrer" className="ml-2 flex-shrink-0 text-[8px] font-mono text-cyan-200 underline underline-offset-2 hover:text-white">
+            SOURCE
+          </a>
         </div>
       )}
 
-      {/* Intelligence Dossier Quick Action Banner */}
       {onOpenIntel && (
-        <div className="px-3 py-1.5 bg-gradient-to-r from-cyan-950/30 to-slate-900/50 border-b border-cyan-400/20">
+        <div className="px-3 py-1.5 border-b border-cyan-400/20 bg-cyan-950/20">
           <button
             type="button"
             onClick={onOpenIntel}
-            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 hover:border-cyan-400/70 text-cyan-200 transition-all duration-200 group cursor-pointer"
-            title="Click to view full Intelligence Dossier"
+            className="w-full flex items-center justify-between rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-2.5 py-1.5 text-cyan-200 transition-colors hover:bg-cyan-500/20"
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <FileText className="w-3.5 h-3.5 text-cyan-300 group-hover:scale-110 transition-transform flex-shrink-0" />
-              <span className="text-[9px] font-mono font-bold tracking-wider text-cyan-300 truncate">
-                Mission Details
-              </span>
-            </div>
-            <span className="text-[9px] font-mono font-bold text-cyan-300 group-hover:translate-x-1 transition-transform flex-shrink-0 ml-1">
-              OPEN →
+            <span className="flex items-center gap-2 text-[9px] font-mono font-bold tracking-wider">
+              <FileText className="h-3.5 w-3.5" /> Mission Details
             </span>
+            <span className="text-[9px] font-mono font-bold">OPEN →</span>
           </button>
         </div>
       )}
 
-      {/* REQUIRED TELEMETRY GRID IN REQUESTED ORDER:
-          1 - LAT
-          2 - LONG
-          3 - VELOCITY
-          THEN REST OF DETAILS */}
       <div className="grid grid-cols-2 gap-2 p-3 bg-black/45 border-b border-white/5">
         {/* 1 - LATITUDE BOX */}
         <div className="bg-slate-900/75 hover:bg-slate-900 border border-cyan-400/25 hover:border-cyan-400/50 rounded-xl p-2.5 flex flex-col justify-between transition-colors">
@@ -446,49 +404,23 @@ export default function SatelliteCard({
           </span>
         </div>
 
-        {/* 5 - PERIOD BOX */}
-        <div className="bg-slate-900/60 hover:bg-slate-900/90 border border-white/5 hover:border-cyan-400/30 rounded-xl p-2.5 flex flex-col justify-between transition-colors">
-          <span className="text-[8px] font-mono tracking-widest text-slate-500 uppercase">
-            PERIOD
-          </span>
-          <span className="text-xs font-mono font-semibold text-slate-300 tabular-nums mt-0.5">
+        <div className="bg-slate-900/60 border border-white/5 rounded-xl p-2.5">
+          <span className="text-[8px] font-mono tracking-widest text-slate-500 uppercase">ORBIT PERIOD</span>
+          <p className="mt-0.5 text-xs font-mono font-semibold text-slate-300 tabular-nums">
             {sat.periodMinutes ? period(sat.periodMinutes) : '—'}
-          </span>
+          </p>
+        </div>
+        <div className="bg-slate-900/60 border border-white/5 rounded-xl p-2.5">
+          <span className="text-[8px] font-mono tracking-widest text-slate-500 uppercase">ORBIT REGIME</span>
+          <p className="mt-0.5 text-xs font-mono font-semibold text-slate-300">{shell.note}</p>
+        </div>
+        <div className="col-span-2 bg-slate-900/60 border border-white/5 rounded-xl p-2.5">
+          <span className="text-[8px] font-mono tracking-widest text-slate-500 uppercase">ORBIT DIRECTION</span>
+          <p className="mt-0.5 text-xs font-mono font-semibold text-slate-300 tabular-nums">
+            {sat.headingDeg != null ? heading(sat.headingDeg) : '—'}
+          </p>
         </div>
 
-        {/* 6 - ORBIT REGIME BOX */}
-        <div className="bg-slate-900/60 hover:bg-slate-900/90 border border-white/5 hover:border-cyan-400/30 rounded-xl p-2.5 flex flex-col justify-between transition-colors">
-          <span className="text-[8px] font-mono tracking-widest text-slate-500 uppercase">
-            ORBIT REGIME
-          </span>
-          <span className="text-xs font-mono font-semibold text-slate-300 truncate mt-0.5" title={shell.note}>
-            {shell.note}
-          </span>
-        </div>
-
-        {/* 7 - ORBIT DIRECTION BOX */}
-        <div className="bg-slate-900/60 hover:bg-slate-900/90 border border-white/5 hover:border-cyan-400/30 rounded-xl p-2.5 flex flex-col justify-between transition-colors">
-          <span className="text-[8px] font-mono tracking-widest text-slate-500 uppercase">
-            ORBIT DIRECTION
-          </span>
-          <span className="text-xs font-mono font-semibold text-slate-300 tabular-nums mt-0.5">
-            {sat.headingDeg != null ? heading(sat.headingDeg) : shell.label === 'GEO' ? 'EAST · GEO' : '—'}
-          </span>
-        </div>
-
-        {/* 8 - GROUND REGION BOX */}
-        <div className="bg-slate-900/60 hover:bg-slate-900/90 border border-white/5 hover:border-cyan-400/30 rounded-xl p-2.5 flex flex-col justify-between transition-colors">
-          <span className="text-[8px] font-mono tracking-widest text-slate-500 uppercase">
-            GROUND REGION
-          </span>
-          <span
-            className="text-xs font-mono font-semibold text-slate-300 truncate flex items-center gap-1 mt-0.5"
-            title={sat.country || 'Ocean'}
-          >
-            <span>{sat.flag || '🌐'}</span>
-            <span className="truncate">{sat.country || 'Ocean'}</span>
-          </span>
-        </div>
       </div>
 
       {/* REST OF DETAILS: NORAD ID & COUNTRY METADATA */}
@@ -507,8 +439,8 @@ export default function SatelliteCard({
         </div>
       </div>
 
-      {/* MARITIME VESSELS SECTION (IF ANY SHIPS IN FOOTPRINT) */}
-      {(sat.totalInViewCount ?? sat.inViewShips?.length ?? 0) > 0 && (
+      {/* AIS positions inside the satellite's geometric line-of-sight horizon. */}
+      {(sat.inViewCountsByType || (sat.totalInViewCount ?? sat.inViewShips?.length ?? 0) > 0) && (
         <div className="p-2.5 border-b border-white/5 bg-cyan-950/20">
           <button
             type="button"
@@ -521,13 +453,19 @@ export default function SatelliteCard({
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400"></span>
               </span>
               <span className="text-[10px] font-mono font-bold tracking-wider">
-                {sat.totalInViewCount ?? sat.inViewShips?.length} SHIPS IN VIEW
+                {sat.totalInViewCount ?? sat.inViewShips?.length ?? 0} AIS SHIPS IN HORIZON
               </span>
             </div>
             <span className="text-[9px] font-mono text-cyan-300 font-semibold group-hover:translate-x-1 transition-transform flex items-center gap-1">
               OPEN SLIDER →
             </span>
           </button>
+          <div className="mt-2 flex flex-wrap gap-1.5 text-[8px] font-mono text-slate-300">
+            <span className="rounded border border-white/10 px-1.5 py-1">CARGO {sat.inViewCountsByType?.cargo ?? 0}</span>
+            <span className="rounded border border-white/10 px-1.5 py-1">TANKER {sat.inViewCountsByType?.tanker ?? 0}</span>
+            <span className="rounded border border-white/10 px-1.5 py-1">MILITARY {sat.inViewCountsByType?.military ?? 0}</span>
+          </div>
+
         </div>
       )}
 
