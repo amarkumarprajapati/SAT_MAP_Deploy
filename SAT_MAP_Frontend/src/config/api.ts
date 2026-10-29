@@ -119,11 +119,7 @@ export const api = {
   geospatialVideoMetadata: () => getApiUrl(API_ENDPOINTS.GEOSPATIAL_VIDEO_METADATA),
 };
 
-// Load the basemap style from the frontend's public assets so MapLibre can
-// start rendering without waiting for the API server.
-export const styleUrl = '/dark-matter-style.json';
 
-// Request visible satellite tiles directly from ArcGIS rather than adding a
-// FastAPI proxy hop for every tile in the viewport.
+export const styleUrl = '/dark-matter-style.json';
 export const mapImageryTileUrl =
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';

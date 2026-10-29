@@ -276,6 +276,7 @@ function LTmap({
   homeLocation,
   onMapCenter,
   showMapControls = false,
+  laserView = false,
   onTrackShip,
   onShipSelect,
   liveTrackedShip,
@@ -1799,6 +1800,19 @@ function LTmap({
           "line-width": 1.5,
         },
       });
+      map.addLayer({
+        id: "sat-footprint-laser",
+        type: "line",
+        source: "sat-footprint",
+        filter: ["==", ["geometry-type"], "LineString"],
+        paint: {
+          "line-color": "#50f7ff",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 1, 1.5, 8, 3],
+          "line-opacity": 0.95,
+          "line-blur": 1.3,
+          "line-dasharray": [1.2, 2.2],
+        },
+      });
       if (!map.getLayer("sat-3d")) {
         satLayerRef.current = createSatelliteLayer("sat-3d");
         map.addLayer(
@@ -2494,6 +2508,18 @@ function LTmap({
     }
     source.setData({ type: "FeatureCollection", features });
   }, [mapReady, geospatialVideoFrame]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const fill = map.getLayer("sat-footprint-fill");
+    const line = map.getLayer("sat-footprint-line");
+    const laser = map.getLayer("sat-footprint-laser");
+    if (!fill || !line || !laser) return;
+    map.setLayoutProperty("sat-footprint-fill", "visibility", laserView ? "none" : "visible");
+    map.setLayoutProperty("sat-footprint-line", "visibility", laserView ? "none" : "visible");
+    map.setLayoutProperty("sat-footprint-laser", "visibility", laserView ? "visible" : "none");
+  }, [mapReady, laserView]);
 
   useEffect(() => {
     if (

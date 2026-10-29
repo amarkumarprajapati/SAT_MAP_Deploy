@@ -27,6 +27,7 @@ export interface LTmapProps {
   flyToLocation?: { lat: number; lng: number; zoom?: number; duration?: number; ts: number } | null;
   onReady?: () => void;
   projection?: 'mercator' | 'globe';
+  laserView?: boolean;
   terrainEnabled?: boolean;
   terrainRetry?: number;
   terrainFocus?: number;

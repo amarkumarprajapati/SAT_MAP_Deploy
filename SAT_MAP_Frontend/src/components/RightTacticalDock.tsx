@@ -29,24 +29,6 @@ export default function RightTacticalDock({
           "linear-gradient(180deg, rgba(18,22,27,0.92), rgba(8,11,15,0.88))",
       }}
     >
-      {/* Dock header */}
-      <div className="flex flex-col items-center gap-1 mb-1">
-        <div
-          className="
-            flex items-center justify-center
-            w-8 h-8 rounded-xl
-            border border-cyan-400/20
-            bg-cyan-400/[0.07]
-          "
-        >
-          <span className="text-[10px] font-mono font-bold tracking-tight text-cyan-300">
-            OI
-          </span>
-        </div>
-
-        <div className="w-5 h-px bg-white/10 mt-1" />
-      </div>
-
       {/* Orbital Intelligence control */}
       <div className="relative group flex justify-center w-full">
         <button
@@ -158,27 +140,6 @@ export default function RightTacticalDock({
               : "OPEN SATELLITE ACCESS"}
           </span>
         </div>
-      </div>
-
-      {/* Bottom status */}
-      <div className="mt-1 flex flex-col items-center gap-1.5">
-        <div className="w-5 h-px bg-white/10" />
-
-        <span
-          className={`
-            w-1.5 h-1.5 rounded-full
-            ${
-              isAreaDrawerOpen
-                ? "bg-cyan-400 shadow-[0_0_7px_rgba(0,229,255,0.7)]"
-                : "bg-zinc-600"
-            }
-          `}
-          aria-hidden="true"
-        />
-
-        <span className="text-[8px] font-mono tracking-wider text-zinc-600">
-          {isAreaDrawerOpen ? "ON" : "SYS"}
-        </span>
       </div>
     </aside>
   );
