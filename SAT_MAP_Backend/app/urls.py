@@ -8,6 +8,7 @@ DIGITRAFFIC_MQTT_PATH = "/mqtt"
 
 CELESTRAK_TLE = "https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle"
 SATNOGS_TLE = "https://db.satnogs.org/api/tle/?format=json"
+SATNOGS_TRANSMITTERS = "https://db.satnogs.org/api/transmitters/?format=json"
 
 PHOTON_REVERSE = "https://photon.komoot.io/reverse"
 WIKIDATA_ITEMS = "https://www.wikidata.org/w/rest.php/wikibase/v1/entities/items"

@@ -557,6 +557,7 @@ export default function Dashboard() {
     sat_navigation: true,
     sat_earth: true,
     sat_science: false,
+    rf_coverage: true,
     balloons: false,
     radiation: false,
     sdk_sea: true,
@@ -1913,7 +1914,7 @@ export default function Dashboard() {
       >
         {/* Left: Branding */}
         <div className="flex flex-col items-start select-none pointer-events-auto flex-shrink-0">
-          <h1 className="text-xl font-bold tracking-[0.3em] text-white font-mono drop-shadow-[0_0_12px_rgba(0,229,255,0.4)] leading-tight">
+          <h1 className="text-xl font-bold tracking-[0.3em] text-white font-mono  leading-tight">
             L&T
           </h1>
           <span className="text-[10px] font-mono tracking-[0.2em] font-semibold uppercase text-cyan-400">
@@ -1922,7 +1923,7 @@ export default function Dashboard() {
         </div>
 
         {/* Right: Actions, Telemetry Badge & Status */}
-        <div className="status-bar-desktop pointer-events-auto flex items-center gap-2.5 sm:gap-3 text-[11px] font-mono tracking-widest text-zinc-300 bg-black/75 backdrop-blur-xl px-3 py-1.5 rounded-xl border border-white/10 shadow-[0_4px_30px_rgba(0,0,0,0.7)] max-w-full overflow-hidden">
+        <div className="status-bar-desktop pointer-events-auto flex items-center gap-2.5 sm:gap-3 text-[11px] font-mono tracking-widest text-zinc-300 bg-black/75 backdrop-blur-xl px-3 py-1.5 rounded-xl border border-white/10 max-w-full overflow-hidden">
           <button
             type="button"
             onClick={() => setShowDashboard(true)}
@@ -1936,16 +1937,7 @@ export default function Dashboard() {
             className="hidden md:flex items-center gap-0.5 border-l border-white/15 pl-1.5"
             aria-label="Map tools"
           >
-            <button
-              type="button"
-              title={showLayers ? "Hide map layers" : "Show map layers"}
-              aria-label={showLayers ? "Hide map layers" : "Show map layers"}
-              aria-pressed={showLayers}
-              onClick={() => setShowLayers((value) => !value)}
-              className={`rounded-md p-1.5 transition-colors hover:bg-white/10 hover:text-cyan-200 ${showLayers ? "text-cyan-300" : ""}`}
-            >
-              <Layers3 size={15} />
-            </button>
+           
             <button
               type="button"
               title={
@@ -2234,7 +2226,7 @@ export default function Dashboard() {
         className={`fixed bottom-9 sm:bottom-10 left-1/2 -translate-x-1/2 z-[200] pointer-events-none transition-all duration-200 ${selectedSatellite ? "hidden lg:flex" : "flex"}`}
       >
         <div
-          className="pointer-events-auto flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#070b14]/90 border border-cyan-500/25 shadow-[0_8px_30px_rgba(0,0,0,0.8),0_0_15px_rgba(0,229,255,0.1)] backdrop-blur-2xl text-[10px] sm:text-[11px] font-mono text-zinc-300 tracking-wider select-none"
+          className="pointer-events-auto flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#070b14]/90 border border-cyan-500/25  backdrop-blur-2xl text-[10px] sm:text-[11px] font-mono text-zinc-300 tracking-wider select-none"
           title="System shortcuts · Click keys or press on keyboard"
         >
           <span>Press</span>

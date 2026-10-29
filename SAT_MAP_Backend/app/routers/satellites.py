@@ -33,6 +33,74 @@ logger = logging.getLogger("ltmap.satellites")
 router = APIRouter(prefix="/api/satellites", tags=["satellites"])
 
 
+@router.get("/{norad_id}/transmitters")
+async def get_satellite_transmitters(norad_id: str):
+    """Get cached public SatNOGS transmitter metadata for a NORAD catalog ID."""
+    if not norad_id.isdigit():
+        return JSONResponse(content={"error": "numeric NORAD id required"}, status_code=400)
+    records, source, fetched_at = await tle_cache.get_transmitters()
+    matches = []
+    for row in records:
+        satellite = row.get("satellite")
+        catalog_id = row.get("norad_cat_id")
+        if catalog_id is None and isinstance(satellite, dict):
+            catalog_id = satellite.get("norad_cat_id")
+        if str(catalog_id or "") != norad_id:
+            continue
+        matches.append({
+            "id": row.get("uuid") or row.get("id"),
+            "description": row.get("description"),
+            "alive": row.get("alive"),
+            "status": row.get("status"),
+            "uplinkLowHz": row.get("uplink_low"),
+            "uplinkHighHz": row.get("uplink_high"),
+            "downlinkLowHz": row.get("downlink_low"),
+            "downlinkHighHz": row.get("downlink_high"),
+            "mode": row.get("mode"),
+            "service": row.get("service"),
+            "source": "SatNOGS DB",
+            "raw": row,
+        })
+    return {
+        "noradId": norad_id,
+        "transmitters": matches,
+        "count": len(matches),
+        "source": source,
+        "sourceUrl": "https://db.satnogs.org/api/transmitters/?format=json",
+        "fetchedAt": fetched_at,
+        "license": "CC BY-SA",
+    }
+
+
+@router.get("/{norad_id}/coverage")
+async def get_satellite_coverage(norad_id: str, elevation_mask_deg: float = Query(10, ge=0, le=30)):
+    """Return a geometric visibility estimate; it does not model an RF beam."""
+    if not norad_id.isdigit():
+        return JSONResponse(content={"error": "numeric NORAD id required"}, status_code=400)
+    tle = tle_cache.get_by_norad(norad_id)
+    if not tle:
+        return JSONResponse(content={"error": "not in catalogue", "noradId": norad_id}, status_code=404)
+    now = datetime.now(timezone.utc)
+    position = propagate_tle(tle["line1"], tle["line2"], now)
+    if not position or position.get("alt_km", 0) <= 0:
+        return JSONResponse(content={"error": "could not propagate", "noradId": norad_id}, status_code=422)
+    earth_radius_km = 6371.0
+    elevation = math.radians(elevation_mask_deg)
+    ratio = earth_radius_km / (earth_radius_km + position["alt_km"])
+    angular_radius = math.acos(max(-1.0, min(1.0, ratio * math.cos(elevation)))) - elevation
+    radius_km = earth_radius_km * max(0.0, angular_radius)
+    return {
+        "noradId": norad_id,
+        "generatedAt": now.isoformat(),
+        "coverageType": "GEOMETRIC_VISIBILITY_ESTIMATE",
+        "position": {"latitude": position["lat"], "longitude": position["lng"], "altitudeKm": position["alt_km"]},
+        "elevationMaskDeg": elevation_mask_deg,
+        "footprintRadiusKm": radius_km,
+        "rfMetadataAvailable": False,
+        "limitations": ["No verified antenna beam pattern", "No live transmitter status", "Geometric visibility is not proof of usable RF signal"],
+    }
+
+
 @router.get("/stream")
 async def stream_satellite_position(
     request: Request,

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import SatelliteIcon from './SatelliteIcon';
 import { SatelliteDetail } from './SatelliteCard';
+import { api, apiClient } from '@/config/api';
 import {
   parseOrbitalParameters,
   getSatelliteLaunchIntel,
@@ -37,6 +38,13 @@ export default function SatelliteIntelSidebar({
   onClose,
   onOpenSlider,
 }: SatelliteIntelSidebarProps) {
+  const [rfInfo, setRfInfo] = useState<{
+    transmitters: Array<{ id?: string; description?: string | null; alive?: boolean | null; status?: string | null; uplinkLowHz?: number | null; uplinkHighHz?: number | null; downlinkLowHz?: number | null; downlinkHighHz?: number | null; mode?: string | null }>;
+    source?: string;
+    fetchedAt?: string | null;
+    radiusKm?: number;
+    elevationMaskDeg?: number;
+  } | null>(null);
   const [wikiState, setWikiState] = useState<{
     satKey: string | null;
     data: WikiSatelliteSummary | null;
@@ -86,6 +94,24 @@ export default function SatelliteIntelSidebar({
       active = false;
     };
   }, [satNoradId, satName, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !satNoradId) return;
+    let active = true;
+    Promise.all([
+      apiClient.get(api.satelliteTransmitters(satNoradId)).then(response => response.data),
+      apiClient.get(api.satelliteCoverage(satNoradId)).then(response => response.data),
+    ]).then(([transmitters, coverage]) => {
+      if (active) setRfInfo({
+        transmitters: transmitters.transmitters ?? [],
+        source: transmitters.source,
+        fetchedAt: transmitters.fetchedAt,
+        radiusKm: coverage.footprintRadiusKm,
+        elevationMaskDeg: coverage.elevationMaskDeg,
+      });
+    }).catch(() => { if (active) setRfInfo(null); });
+    return () => { active = false; };
+  }, [isOpen, satNoradId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -310,6 +336,36 @@ export default function SatelliteIntelSidebar({
               </div>
             </div>
           </div>
+
+          {/* In-View Ships Maritime Correlation Card (if present) */}
+          {sat.noradId && (
+            <section className="rounded-xl border border-cyan-500/25 bg-cyan-950/10 p-3 space-y-2">
+              <div className="flex items-center justify-between text-[10px] font-mono font-bold tracking-wider text-cyan-300">
+                <span>RF TRANSMITTER DATA</span>
+                <span>{rfInfo?.transmitters.length ?? '—'} RECORDS</span>
+              </div>
+              {rfInfo?.transmitters.length ? rfInfo.transmitters.map((tx, index) => {
+                const frequency = (low?: number | null, high?: number | null) => {
+                  if (low == null && high == null) return null;
+                  const lowMhz = low == null ? null : low / 1e6;
+                  const highMhz = high == null ? null : high / 1e6;
+                  return lowMhz != null && highMhz != null && lowMhz !== highMhz
+                    ? `${lowMhz.toFixed(3)}–${highMhz.toFixed(3)} MHz`
+                    : `${(lowMhz ?? highMhz)!.toFixed(3)} MHz`;
+                };
+                return <div key={tx.id ?? index} className="text-[10px] text-zinc-300 space-y-0.5">
+                  {tx.description && <div>{tx.description}</div>}
+                  <div className="text-zinc-400">Downlink: {frequency(tx.downlinkLowHz, tx.downlinkHighHz) ?? 'unknown'} · Uplink: {frequency(tx.uplinkLowHz, tx.uplinkHighHz) ?? 'unknown'}</div>
+                  <div className="text-zinc-500">Mode: {tx.mode || 'unknown'} · Listed status: {tx.status || (tx.alive == null ? 'unknown' : tx.alive ? 'alive' : 'inactive')}</div>
+                </div>;
+              }) : <p className="text-[10px] text-zinc-400">{rfInfo ? 'No SatNOGS transmitter record for this NORAD ID.' : 'Loading cached transmitter metadata…'}</p>}
+              <div className="border-t border-white/5 pt-2 text-[9px] font-mono text-zinc-500">
+                Estimated geometric visibility: {rfInfo?.radiusKm != null ? `${Math.round(rfInfo.radiusKm).toLocaleString()} km radius at ${rfInfo.elevationMaskDeg}° elevation` : 'loading'}.
+                {' '}This is not a verified RF beam or proof of reception.
+                <div className="mt-1">Source: SatNOGS DB (CC BY-SA) · {rfInfo?.fetchedAt ? new Date(rfInfo.fetchedAt).toLocaleString() : rfInfo?.source ?? 'refresh pending'}</div>
+              </div>
+            </section>
+          )}
 
           {/* In-View Ships Maritime Correlation Card (if present) */}
           {(sat.totalInViewCount ?? sat.inViewShips?.length ?? 0) > 0 && (

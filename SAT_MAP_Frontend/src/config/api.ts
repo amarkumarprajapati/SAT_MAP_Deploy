@@ -106,6 +106,8 @@ export const api = {
   },
   satellitePositionStream: (id: string) =>
     getApiUrl(`${API_ENDPOINTS.SATELLITES}/stream?id=${encodeURIComponent(id.trim())}`),
+  satelliteTransmitters: (id: string) => getApiUrl(`${API_ENDPOINTS.SATELLITES}/${encodeURIComponent(id.trim())}/transmitters`),
+  satelliteCoverage: (id: string) => getApiUrl(`${API_ENDPOINTS.SATELLITES}/${encodeURIComponent(id.trim())}/coverage`),
   regionDossier: (lat: number, lng: number) =>
     getApiUrl(`${API_ENDPOINTS.REGION_DOSSIER}?lat=${lat}&lng=${lng}`),
   stats: () => getApiUrl(API_ENDPOINTS.STATS),

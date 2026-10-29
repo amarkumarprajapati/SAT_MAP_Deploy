@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,7 @@ import httpx
 
 from ..config import settings
 from .. import database
-from ..urls import CELESTRAK_TLE, SATNOGS_TLE
+from ..urls import CELESTRAK_TLE, SATNOGS_TLE, SATNOGS_TRANSMITTERS
 
 logger = logging.getLogger("ltmap.tle")
 
@@ -30,6 +31,35 @@ _cache_time: float = 0
 _CACHE_TTL = 3600  # 1 hour
 
 _lock = asyncio.Lock()
+
+_transmitter_records: list[dict[str, Any]] = []
+_transmitter_fetched_at = 0.0
+_transmitter_lock = asyncio.Lock()
+_TRANSMITTER_TTL = 86400
+
+
+async def get_transmitters() -> tuple[list[dict[str, Any]], str, str | None]:
+    """Return cached SatNOGS transmitter records, refreshing at most daily."""
+    global _transmitter_records, _transmitter_fetched_at
+    async with _transmitter_lock:
+        if _transmitter_fetched_at and time.time() - _transmitter_fetched_at < _TRANSMITTER_TTL:
+            return _transmitter_records, "cache", datetime.fromtimestamp(_transmitter_fetched_at, timezone.utc).isoformat()
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                response = await client.get(SATNOGS_TRANSMITTERS, headers={"Accept": "application/json"})
+                response.raise_for_status()
+                data = response.json()
+                if not isinstance(data, list):
+                    raise ValueError("Unexpected SatNOGS transmitter response")
+                _transmitter_records = [row for row in data if isinstance(row, dict)]
+                _transmitter_fetched_at = time.time()
+                return _transmitter_records, "satnogs", datetime.fromtimestamp(_transmitter_fetched_at, timezone.utc).isoformat()
+        except Exception as exc:
+            logger.warning("SatNOGS transmitter refresh failed: %s", exc)
+            return _transmitter_records, "stale-cache" if _transmitter_records else "unavailable", (
+                datetime.fromtimestamp(_transmitter_fetched_at, timezone.utc).isoformat()
+                if _transmitter_fetched_at else None
+            )
 
 
 def _parse_tle_text(text: str) -> list[dict[str, str]]:

@@ -20,6 +20,7 @@ export interface FootprintInput {
   lat: number;
   alt: number;
   color?: string;
+  elevationMaskDeg?: number;
 }
 
 export interface FootprintOutput {
@@ -95,10 +96,11 @@ export function generateFootprintFeatures(
   input: FootprintInput,
   points = 180,
 ): FootprintOutput {
-  const { lng, lat, alt, color } = input;
+  const { lng, lat, alt, color, elevationMaskDeg = 0 } = input;
   const altitudeKm = Math.max(1, alt);
-  const cosAngle = EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altitudeKm);
-  const angularRadiusRad = Math.acos(Math.min(1, Math.max(0, cosAngle)));
+  const elevationMaskRad = (Math.max(0, Math.min(30, elevationMaskDeg)) * Math.PI) / 180;
+  const ratio = EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altitudeKm);
+  const angularRadiusRad = Math.max(0, Math.acos(Math.min(1, Math.max(-1, ratio * Math.cos(elevationMaskRad)))) - elevationMaskRad);
   const radiusKm = EARTH_RADIUS_KM * angularRadiusRad;
 
   const latRad = (lat * Math.PI) / 180;

@@ -2517,10 +2517,11 @@ function LTmap({
     const line = map.getLayer("sat-footprint-line");
     const laser = map.getLayer("sat-footprint-laser");
     if (!fill || !line || !laser) return;
-    map.setLayoutProperty("sat-footprint-fill", "visibility", laserView ? "none" : "visible");
-    map.setLayoutProperty("sat-footprint-line", "visibility", laserView ? "none" : "visible");
-    map.setLayoutProperty("sat-footprint-laser", "visibility", laserView ? "visible" : "none");
-  }, [mapReady, laserView]);
+    const showCoverage = activeLayers.rf_coverage !== false;
+    map.setLayoutProperty("sat-footprint-fill", "visibility", laserView || !showCoverage ? "none" : "visible");
+    map.setLayoutProperty("sat-footprint-line", "visibility", laserView || !showCoverage ? "none" : "visible");
+    map.setLayoutProperty("sat-footprint-laser", "visibility", laserView || !showCoverage ? "none" : "visible");
+  }, [mapReady, laserView, activeLayers.rf_coverage]);
 
   useEffect(() => {
     if (
@@ -2538,7 +2539,7 @@ function LTmap({
     // with its marker in the animation loop below.
     if (satPlaybackPlaying) return;
     const { lng, lat, alt, color } = selectedSat;
-    const res = generateFootprintFeatures({ lng, lat, alt, color });
+    const res = generateFootprintFeatures({ lng, lat, alt, color, elevationMaskDeg: 10 });
     setGeo("sat-footprint", res.features);
   }, [selectedSat, mapReady, setGeo, satPlaybackPlaying]);
 
@@ -3267,6 +3268,7 @@ function LTmap({
             lat: pos.lat,
             alt: pos.altKm,
             color,
+            elevationMaskDeg: 10,
           });
           setGeo("sat-footprint", footprint.features);
           if (showSatCircumferenceRef.current) {

@@ -61,6 +61,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
       { key: 'sat_military', label: 'Military / Intel', dataKey: 'satellites', catKey: 'military' },
       { key: 'sat_navigation', label: 'GPS / Navigation', dataKey: 'satellites', catKey: 'navigation' },
       { key: 'sat_earth', label: 'Earth Observation', dataKey: 'satellites', catKey: 'earth_obs' },
+      { key: 'rf_coverage', label: 'Geometric coverage', dataKey: '', description: 'Estimated visibility area; not a verified RF beam', color: '#00E5FF' },
     ],
   },
   {

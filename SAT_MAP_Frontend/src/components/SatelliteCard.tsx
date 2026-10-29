@@ -284,9 +284,8 @@ export default function SatelliteCard({
         </div>
       ) : (
         <div className="flex h-20 items-center gap-3 border-b border-white/10 bg-slate-900/70 px-4">
-          <SatelliteIcon className="h-8 w-8 shrink-0 text-cyan-400" accent={accent} />
           <div className="min-w-0">
-            <p className="text-[9px] font-mono font-bold tracking-widest text-cyan-300">NO VERIFIED IMAGE AVAILABLE</p>
+            <p className="text-[9px] font-mono font-bold tracking-widest text-cyan-300">NO IMAGE</p>
             <p className="mt-1 truncate text-[10px] text-slate-400">{imageTitle || sat.name}</p>
           </div>
         </div>
