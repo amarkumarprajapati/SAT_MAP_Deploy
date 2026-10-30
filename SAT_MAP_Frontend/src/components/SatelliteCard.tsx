@@ -7,7 +7,6 @@ import SatelliteIcon from './SatelliteIcon';
 import { fetchSatelliteWikiSummary } from '@/lib/satellite-intel';
 
 export interface SatelliteDetail {
-  shipCardOpen?: boolean;
   name: string;
   lat?: number | null;
   lng?: number | null;
@@ -192,7 +191,7 @@ export default function SatelliteCard({
 
   return (
     <div
-      className={`pointer-events-auto fixed ${sat.shipCardOpen ? 'left-6' : 'right-6'} bottom-6 z-[350] w-84 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-white/10 bg-slate-950/90 shadow-2xl backdrop-blur-2xl transition-all duration-200 select-none animate-in fade-in slide-in-from-bottom-2`}
+      className="pointer-events-auto fixed right-6 bottom-6 z-[350] w-84 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-white/10 bg-slate-950/90 shadow-2xl backdrop-blur-2xl transition-all duration-200 select-none animate-in fade-in slide-in-from-bottom-2"
       style={{
         borderTop: `2px solid ${accent}`,
       }}

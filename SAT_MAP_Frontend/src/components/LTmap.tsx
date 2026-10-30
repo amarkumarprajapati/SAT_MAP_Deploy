@@ -3950,7 +3950,7 @@ function LTmap({
       {mapReady && showMapControls && <MapControls mapRef={mapRef} />}
       {selectedSat && !isIntelOpen && !showVesselsSlider && (
         <SatelliteCard
-          sat={{ ...selectedSat, shipCardOpen: Boolean(selectedShip) }}
+          sat={selectedSat}
           onClose={clearSat}
           onToggleCircumference={() => setShowSatCircumference((visible) => !visible)}
           isCircumferenceActive={showSatCircumference}
