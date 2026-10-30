@@ -211,8 +211,9 @@ void main() {
 const ORBIT_FRAG = `
 precision mediump float;
 uniform vec3 u_color;
+uniform float u_alpha;
 out vec4 fragColor;
-void main() { fragColor = vec4(u_color, 0.85); }`;
+void main() { fragColor = vec4(u_color, u_alpha); }`;
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
   const sh = gl.createShader(type)!;
@@ -682,12 +683,18 @@ export function createSatelliteLayer(id: string): CustomLayerInterface & {
       }
       if (coneDirty && orbitProgram) {
         for (const c of coneBuffers) gl.deleteBuffer(c.buf);
-        coneBuffers = (coneSegments ?? []).filter(seg => seg.length > 1).map(seg => {
-          const data = packOrbit(seg, exaggeration);
+        coneBuffers = (coneSegments ?? []).filter(seg => seg.length > 2).map(seg => {
+          // Triangle fan: satellite apex followed by a closed ground ring.
+          const vertices: { lng: number; lat: number; altKm: number }[] = [];
+          const apex = seg[0];
+          for (let i = 1; i < seg.length - 1; i++) {
+            vertices.push(apex, seg[i], seg[i + 1]);
+          }
+          const data = packOrbit(vertices, exaggeration);
           const buf = gl!.createBuffer()!;
           gl!.bindBuffer(gl!.ARRAY_BUFFER, buf);
           gl!.bufferData(gl!.ARRAY_BUFFER, data, gl!.STATIC_DRAW);
-          return { buf, count: seg.length };
+          return { buf, count: vertices.length };
         });
         coneDirty = false;
       }
@@ -706,6 +713,7 @@ export function createSatelliteLayer(id: string): CustomLayerInterface & {
           gl.uniform3f(gl.getUniformLocation(orbitProgram, 'u_color'),
             ((orbitColor >> 16) & 0xff) / 255, ((orbitColor >> 8) & 0xff) / 255, (orbitColor & 0xff) / 255);
           for (const o of orbitBuffers) {
+            gl.uniform1f(gl.getUniformLocation(orbitProgram, 'u_alpha'), 0.85);
             gl.bindBuffer(gl.ARRAY_BUFFER, o.buf);
             gl.enableVertexAttribArray(loc);
             gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
@@ -717,12 +725,13 @@ export function createSatelliteLayer(id: string): CustomLayerInterface & {
         if (coneBuffers.length) {
           gl.uniform3f(gl.getUniformLocation(orbitProgram, 'u_color'),
             ((coneColor >> 16) & 0xff) / 255, ((coneColor >> 8) & 0xff) / 255, (coneColor & 0xff) / 255);
+          gl.uniform1f(gl.getUniformLocation(orbitProgram, 'u_alpha'), 0.18);
           for (const c of coneBuffers) {
             gl.bindBuffer(gl.ARRAY_BUFFER, c.buf);
             gl.enableVertexAttribArray(loc);
             gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
             gl.vertexAttribDivisor(loc, 0);
-            gl.drawArrays(gl.LINE_STRIP, 0, c.count);
+            gl.drawArrays(gl.TRIANGLES, 0, c.count);
           }
         }
 

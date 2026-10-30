@@ -251,10 +251,7 @@ function buildSatelliteHorizonCone(lng: number, lat: number, alt: number) {
     lat: pointLat,
     altKm: 0,
   }));
-  const spokes = groundRing
-    .filter((_, index) => index % 12 === 0)
-    .map((point) => [satellite, point]);
-  return [...spokes, groundRing];
+  return [[satellite, ...groundRing, groundRing[0]]];
 }
 
 function LTmap({
@@ -1030,6 +1027,8 @@ function LTmap({
     ships: unknown;
   } | null>(null);
   const [selectedSat, setSelectedSat] = useState<SatelliteDetail | null>(null);
+  const [coverageAreaMode, setCoverageAreaMode] = useState<"total" | "view">("total");
+  const [coverageViewBounds, setCoverageViewBounds] = useState<{ west: number; south: number; east: number; north: number } | null>(null);
   const [showSatCircumference, setShowSatCircumference] = useState(false);
   const showSatCircumferenceRef = useRef(false);
   useEffect(() => {
@@ -2517,11 +2516,11 @@ function LTmap({
     const line = map.getLayer("sat-footprint-line");
     const laser = map.getLayer("sat-footprint-laser");
     if (!fill || !line || !laser) return;
-    const showCoverage = activeLayers.rf_coverage !== false;
+    const showCoverage = activeLayers.rf_coverage !== false && !selectedSat;
     map.setLayoutProperty("sat-footprint-fill", "visibility", laserView || !showCoverage ? "none" : "visible");
     map.setLayoutProperty("sat-footprint-line", "visibility", laserView || !showCoverage ? "none" : "visible");
     map.setLayoutProperty("sat-footprint-laser", "visibility", laserView || !showCoverage ? "none" : "visible");
-  }, [mapReady, laserView, activeLayers.rf_coverage]);
+  }, [mapReady, laserView, activeLayers.rf_coverage, selectedSat]);
 
   useEffect(() => {
     if (
@@ -2538,15 +2537,13 @@ function LTmap({
     // During playback the selected satellite's footprint is updated directly
     // with its marker in the animation loop below.
     if (satPlaybackPlaying) return;
-    const { lng, lat, alt, color } = selectedSat;
-    const res = generateFootprintFeatures({ lng, lat, alt, color, elevationMaskDeg: 10 });
-    setGeo("sat-footprint", res.features);
+    setGeo("sat-footprint", []);
   }, [selectedSat, mapReady, setGeo, satPlaybackPlaying]);
 
   useEffect(() => {
     if (!mapReady) return;
     if (satPlaybackPlaying) return;
-    if (!showSatCircumference || !selectedSat || selectedSat.lat == null || selectedSat.lng == null || selectedSat.alt == null) {
+    if (!selectedSat || selectedSat.lat == null || selectedSat.lng == null || selectedSat.alt == null) {
       satLayerRef.current?.setCone(null);
       return;
     }
@@ -3689,6 +3686,7 @@ function LTmap({
     const reportCenter = () => {
       const c = map.getCenter();
       const b = map.getBounds();
+      setCoverageViewBounds(b ? { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() } : null);
       onMapCenter?.({
         lat: c.lat,
         lng: c.lng,
@@ -3996,6 +3994,45 @@ function LTmap({
           }}
         />
       )}
+      {selectedSat?.lat != null && selectedSat.lng != null && selectedSat.alt != null && (() => {
+        const coverage = generateFootprintFeatures({ lng: selectedSat.lng, lat: selectedSat.lat, alt: selectedSat.alt, elevationMaskDeg: 10 });
+        const totalAreaKm2 = 2 * Math.PI * 6371 ** 2 * (1 - Math.cos(coverage.angularRadiusRad));
+        let viewAreaKm2 = totalAreaKm2;
+        const bounds = coverageViewBounds;
+        if (bounds) {
+          const west = bounds.west, east = bounds.east;
+          const south = Math.max(-90, bounds.south), north = Math.min(90, bounds.north);
+          const cols = 72, rows = 48;
+          const dLon = (east - west) * Math.PI / 180 / cols;
+          const dLat = (north - south) * Math.PI / 180 / rows;
+          const satLat = selectedSat.lat * Math.PI / 180, satLng = selectedSat.lng * Math.PI / 180;
+          viewAreaKm2 = 0;
+          for (let row = 0; row < rows; row++) {
+            const lat = (south + (row + 0.5) * (north - south) / rows) * Math.PI / 180;
+            const cellArea = 6371 ** 2 * dLon * dLat * Math.cos(lat);
+            for (let col = 0; col < cols; col++) {
+              const lng = (west + (col + 0.5) * (east - west) / cols) * Math.PI / 180;
+              const cosDistance = Math.sin(satLat) * Math.sin(lat) + Math.cos(satLat) * Math.cos(lat) * Math.cos(lng - satLng);
+              if (Math.acos(Math.max(-1, Math.min(1, cosDistance))) <= coverage.angularRadiusRad) viewAreaKm2 += cellArea;
+            }
+          }
+        }
+        const areaKm2 = coverageAreaMode === "total" ? totalAreaKm2 : viewAreaKm2;
+        return (
+          <div className="pointer-events-auto fixed bottom-10 left-1/2 z-[220] w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-cyan-400/30 bg-[#060a14]/95 px-3.5 py-3 font-mono text-[10px] text-cyan-100 shadow-xl backdrop-blur-xl sm:bottom-12">
+            <div className="flex items-center justify-between"><span className="text-[9px] uppercase tracking-widest text-cyan-300">Ground coverage · {selectedSat.name}</span><span className="text-[8px] text-zinc-500">ESTIMATE</span></div>
+            <div className="mt-2 grid grid-cols-2 gap-3">
+              <div><span className="text-zinc-500">{coverageAreaMode === "total" ? "Total coverage area" : "Coverage in current view"}</span><div className="text-sm font-semibold text-white">{areaKm2 >= 1e6 ? `${(areaKm2 / 1e6).toFixed(2)}M km²` : `${Math.round(areaKm2).toLocaleString()} km²`}</div></div>
+              <div><span className="text-zinc-500">Footprint radius</span><div className="text-sm font-semibold text-white">{Math.round(coverage.radiusKm).toLocaleString()} km</div></div>
+            </div>
+            <div className="mt-2 border-t border-white/10 pt-2 text-[9px] leading-relaxed text-zinc-400">
+              <div><span className="mr-1.5 inline-block h-2 w-2 rounded-sm bg-cyan-300/70 align-middle" />Cyan cone: selected satellite&apos;s estimated ground coverage</div>
+              <div className="mt-1">Dotted edge: 10° minimum elevation · altitude {Math.round(selectedSat.alt).toLocaleString()} km</div>
+            </div>
+            <div className="mt-2 flex justify-end"><button type="button" onClick={() => setCoverageAreaMode(mode => mode === "total" ? "view" : "total")} className="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[9px] font-semibold text-cyan-200 hover:bg-cyan-400/20">Show {coverageAreaMode === "total" ? "current viewing area" : "total coverage area"}</button></div>
+          </div>
+        );
+      })()}
       {selectedSat && showVesselsSlider && (
         <SatelliteVesselsSlider
           sat={selectedSat}

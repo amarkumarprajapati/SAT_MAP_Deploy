@@ -2223,7 +2223,7 @@ export default function Dashboard() {
       )}
 
       <div
-        className={`fixed bottom-9 sm:bottom-10 left-1/2 -translate-x-1/2 z-[200] pointer-events-none transition-all duration-200 ${selectedSatellite ? "hidden lg:flex" : "flex"}`}
+        className="hidden"
       >
         <div
           className="pointer-events-auto flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#070b14]/90 border border-cyan-500/25  backdrop-blur-2xl text-[10px] sm:text-[11px] font-mono text-zinc-300 tracking-wider select-none"
