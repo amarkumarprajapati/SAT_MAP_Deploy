@@ -1,6 +1,6 @@
 # Deployment
 
-The repository root `compose.yaml` is the single Docker deployment setup for the Next.js frontend, FastAPI backend, OSINT service, MySQL database, and phpMyAdmin query UI.
+The repository root `compose.yaml` is the single Docker deployment setup for the Next.js frontend, FastAPI backend, OSINT service, and MySQL database.
 
 ## Configure and start
 
@@ -12,7 +12,7 @@ docker compose ps
 docker compose logs -f
 ```
 
-Open `http://localhost:7890` for the app and `http://localhost:8080` for phpMyAdmin. Sign in with the `MYSQL_USER` and `MYSQL_PASSWORD` values, select the `MYSQL_DATABASE` database, and use the SQL tab to run queries. MySQL data persists in the `mysql_data` volume. The previous SQLite snapshots are imported automatically the first time MySQL starts with an empty snapshots table.
+Open `http://localhost:7890` for the app. MySQL is available to tools on the Compose network at host `mysql`, port `3306`; connect with the `MYSQL_USER` and `MYSQL_PASSWORD` values from the root `.env` and select `MYSQL_DATABASE`. The database persists in the `mysql_data` volume. The previous SQLite snapshots are imported automatically the first time MySQL starts with an empty snapshots table.
 
 ## Operations
 

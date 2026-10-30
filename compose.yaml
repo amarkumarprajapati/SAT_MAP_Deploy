@@ -20,21 +20,6 @@ services:
     networks:
       - app
 
-  phpmyadmin:
-    image: phpmyadmin:5-apache
-    restart: unless-stopped
-    environment:
-      PMA_HOST: mysql
-      PMA_PORT: 3306
-      UPLOAD_LIMIT: 64M
-    ports:
-      - "${PHPMYADMIN_PORT:-8080}:80"
-    depends_on:
-      mysql:
-        condition: service_healthy
-    networks:
-      - app
-
   osint:
     build:
       context: ./osint
