@@ -1,0 +1,29 @@
+# Deployment
+
+The repository root `compose.yaml` is the single Docker deployment setup for the Next.js frontend, FastAPI backend, OSINT service, MySQL database, and phpMyAdmin query UI.
+
+## Configure and start
+
+Copy `.env.example` to `.env` in the repository root. Set the same strong password for `DATABASE_PASSWORD` and `MYSQL_PASSWORD`, set a separate `MYSQL_ROOT_PASSWORD`, and add provider API keys if needed. Compose uses that one file for deployment settings.
+
+```sh
+docker compose up -d --build
+docker compose ps
+docker compose logs -f
+```
+
+Open `http://localhost:7890` for the app and `http://localhost:8080` for phpMyAdmin. Sign in with the `MYSQL_USER` and `MYSQL_PASSWORD` values, select the `MYSQL_DATABASE` database, and use the SQL tab to run queries. MySQL data persists in the `mysql_data` volume. The previous SQLite snapshots are imported automatically the first time MySQL starts with an empty snapshots table.
+
+## Operations
+
+```sh
+docker compose up -d --build
+docker compose logs -f backend frontend
+docker compose down
+```
+
+Use `docker compose down -v` only when you intend to delete the database volume and its data.
+
+## Local development
+
+Run the frontend with `npm run dev` from `SAT_MAP_Frontend`. Run the backend with `python run.py` from `SAT_MAP_Backend`. Both applications read configuration from the repository root `.env`.

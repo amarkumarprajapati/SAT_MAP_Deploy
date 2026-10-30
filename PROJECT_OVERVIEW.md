@@ -46,12 +46,12 @@ The application comprises three core sub-services packaged into a single desktop
 * **Default Port**: `7890`
 
 ### 2. `SAT_MAP_Backend` (Telemetry & Aggregation Service)
-* **Framework**: Python 3.10+, FastAPI, Uvicorn, AsyncPG.
+* **Framework**: Python 3.10+, FastAPI, Uvicorn, MySQL.
 * **Key Modules**:
   * **Satellites**: Automated TLE (Two-Line Element) cache updates and orbit calculations.
   * **Maritime (AIS)**: Live vessel tracking streams via WebSocket feeds (`ais_stream`, `digitraffic_ais`).
   * **Flights**: Real-time flight tracking aggregator.
-  * **Database**: PostgreSQL connection pool for historical records, dossiers, and cached snapshot storage.
+  * **Database**: MySQL container for cached snapshot storage and SQL queries.
 * **Default Port**: `8569`
 
 ### 3. `osint` (Intelligence Ingestion & Geocoding Engine)
@@ -76,7 +76,7 @@ The application comprises three core sub-services packaged into a single desktop
 | **Frontend** | `7890` | Next.js Web Interface / Map View |
 | **Backend** | `8569` | FastAPI REST & WebSocket Server |
 | **OSINT** | `15673` | NestJS Intelligence & Geocoding Service |
-| **Database** | `5432` | PostgreSQL (Optional for snapshot persistence) |
+| **Database** | `3306` | MySQL snapshot persistence |
 
 ---
 

@@ -2349,7 +2349,6 @@ function LTmap({
           return;
         }
         // Keep the live marker at the centre of the full revolution, as in
-        // Osiris. Starting the line at now leaves the marker at one endpoint
         // and stale catalogue positions can make them look like separate paths.
         const anchor = new Date(satPlaybackTimeRef.current ?? Date.now());
         const current = propagateTLE(p.line1, p.line2, anchor);

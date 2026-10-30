@@ -1,5 +1,5 @@
 const { app, BrowserWindow, Menu } = require('electron');
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
@@ -10,9 +10,7 @@ const BASE_DIR = app.isPackaged
   ? process.resourcesPath
   : path.resolve(__dirname, '..', 'SAT_Build', 'internal', 'dist');
 
-const PGSQL_DIR = path.join(BASE_DIR, 'pgsql');
-const PGDATA_DIR = path.join(BASE_DIR, 'data', 'pgdata');
-const LOGS_DIR = path.join(BASE_DIR, 'logs');
+const DATA_DIR = path.join(BASE_DIR, 'data');
 const BACKEND_EXE = path.join(BASE_DIR, 'backend', 'backend.exe');
 const OSINT_ENTRY = path.join(BASE_DIR, 'osint', 'dist', 'main.js');
 const FRONTEND_DIR = path.join(BASE_DIR, 'frontend');
@@ -21,12 +19,11 @@ const NODE_EXE = path.join(BASE_DIR, 'node', 'node.exe');
 const FRONTEND_PORT = 7890;
 const BACKEND_PORT = 8569;
 const OSINT_PORT = 15673;
-const PG_PORT = 5432;
 
 const managedProcesses = [];
 let mainWindow = null;
 let isShuttingDown = false;
-const startupStatus = { database: 'Waiting', osint: 'Waiting', backend: 'Waiting', frontend: 'Waiting' };
+const startupStatus = { osint: 'Waiting', backend: 'Waiting', frontend: 'Waiting' };
 
 function renderStartupPage(errorMessage = '') {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -49,12 +46,6 @@ function setStartupStatus(service, status) {
   renderStartupPage();
 }
 
-function ensureDir(dirPath) {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-  }
-}
-
 function checkPortOpen(port, host = '127.0.0.1') {
   return new Promise((resolve) => {
     const socket = new net.Socket();
@@ -75,15 +66,6 @@ function checkPortOpen(port, host = '127.0.0.1') {
   });
 }
 
-async function waitForPort(port, host = '127.0.0.1', timeoutMs = 45000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (await checkPortOpen(port, host)) return true;
-    await new Promise((r) => setTimeout(r, 600));
-  }
-  throw new Error(`Timeout waiting for service on ${host}:${port}`);
-}
-
 function checkHttpReady(port, route = '/') {
   return new Promise((resolve) => {
     const request = http.get({ hostname: '127.0.0.1', port, path: route, timeout: 2500 }, (response) => {
@@ -102,47 +84,6 @@ async function waitForHttp(port, route, timeoutMs = 45000) {
     await new Promise((resolve) => setTimeout(resolve, 600));
   }
   throw new Error(`Service did not become ready at http://127.0.0.1:${port}${route}`);
-}
-
-async function startPostgres() {
-  ensureDir(LOGS_DIR);
-  const alreadyRunning = await checkPortOpen(PG_PORT);
-  if (alreadyRunning) {
-    console.log(`[SAT] PostgreSQL already running on port ${PG_PORT}`);
-    setStartupStatus('database', 'Ready');
-    return;
-  }
-
-  const initDbExe = path.join(PGSQL_DIR, 'bin', 'initdb.exe');
-  const pgCtlExe = path.join(PGSQL_DIR, 'bin', 'pg_ctl.exe');
-  const psqlExe = path.join(PGSQL_DIR, 'bin', 'psql.exe');
-  const createdbExe = path.join(PGSQL_DIR, 'bin', 'createdb.exe');
-
-  if (fs.existsSync(pgCtlExe)) {
-    if (!fs.existsSync(PGDATA_DIR)) {
-      ensureDir(path.dirname(PGDATA_DIR));
-      console.log('[SAT] Initializing PostgreSQL cluster...');
-      execSync(`"${initDbExe}" -D "${PGDATA_DIR}" -U sat_map -E UTF8 --auth=trust`, { stdio: 'ignore' });
-      fs.appendFileSync(path.join(PGDATA_DIR, 'postgresql.conf'), `\nlisten_addresses = '127.0.0.1'\nport = ${PG_PORT}\n`);
-    }
-
-    console.log('[SAT] Launching PostgreSQL service...');
-    execSync(`"${pgCtlExe}" -D "${PGDATA_DIR}" -l "${path.join(LOGS_DIR, 'postgresql.log')}" start -w`, { stdio: 'ignore' });
-    managedProcesses.push({ type: 'pg_ctl', dir: PGDATA_DIR });
-
-    await waitForPort(PG_PORT);
-
-    try {
-      execSync(`"${createdbExe}" -U sat_map -h 127.0.0.1 -p ${PG_PORT} sat_map 2>nul`, { stdio: 'ignore' });
-    } catch {}
-
-    try {
-      execSync(`"${psqlExe}" -U sat_map -h 127.0.0.1 -p ${PG_PORT} -d sat_map -c "ALTER USER sat_map WITH PASSWORD 'sat_map@2026';"`, { stdio: 'ignore' });
-    } catch {}
-  } else {
-    console.warn('[SAT] PostgreSQL is not bundled; snapshots will be stored in memory for this session.');
-  }
-  setStartupStatus('database', fs.existsSync(path.join(PGSQL_DIR, 'bin', 'pg_ctl.exe')) ? 'Ready' : 'Optional');
 }
 
 async function startOsint() {
@@ -190,11 +131,11 @@ async function startBackend() {
       APP_ENV: 'development',
       HOST: '127.0.0.1',
       PORT: String(BACKEND_PORT),
-      DATABASE_HOST: '127.0.0.1',
-      DATABASE_PORT: String(PG_PORT),
-      DATABASE_NAME: 'sat_map',
-      DATABASE_USER: 'sat_map',
-      DATABASE_PASSWORD: 'sat_map@2026',
+      DATABASE_HOST: '',
+      DATABASE_NAME: '',
+      DATABASE_USER: '',
+      DATABASE_PASSWORD: '',
+      LEGACY_DATABASE_PATH: path.join(DATA_DIR, 'sat_map.sqlite3'),
       DATABASE_REQUIRED: 'false',
       CORS_ORIGINS: `http://127.0.0.1:${FRONTEND_PORT},http://localhost:${FRONTEND_PORT}`,
       OSINT_SERVICE_URL: `http://127.0.0.1:${OSINT_PORT}`,
@@ -261,11 +202,6 @@ function shutdownAll() {
     try {
       if (item.type === 'child' && item.process && !item.process.killed) {
         item.process.kill('SIGTERM');
-      } else if (item.type === 'pg_ctl') {
-        const pgCtl = path.join(PGSQL_DIR, 'bin', 'pg_ctl.exe');
-        if (fs.existsSync(pgCtl)) {
-          execSync(`"${pgCtl}" -D "${item.dir}" stop -m fast`, { stdio: 'ignore' });
-        }
       }
     } catch (err) {
       console.warn(`[SAT] Shutdown cleanup error:`, err.message);
@@ -293,7 +229,6 @@ app.whenReady().then(async () => {
   renderStartupPage();
 
   try {
-    await startPostgres();
     await startOsint();
     await startBackend();
     await startFrontend();

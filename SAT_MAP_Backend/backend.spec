@@ -12,7 +12,6 @@ a = Analysis(
     binaries=[],
     datas=[
         (os.path.join(backend_dir, 'app'), 'app'),
-        (os.path.join(backend_dir, '.env'), '.'),
     ],
     hiddenimports=[
         'uvicorn',
@@ -29,8 +28,7 @@ a = Analysis(
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
         'uvicorn.lifespan.off',
-        'asyncpg',
-        'asyncpg.protocol',
+        'aiomysql',
         'httpx',
         'pydantic',
         'pydantic_core',

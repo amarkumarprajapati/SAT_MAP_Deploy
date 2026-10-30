@@ -197,7 +197,7 @@ When a user clicks or inspects any global coordinate, the backend aggregates dat
 
 ## 5. Environment Variables & Credentials Reference
 
-The following environment variables configure external integrations in `backend/.env`:
+The following environment variables configure external integrations in the repository root `.env`:
 
 ```env
 # AISStream (Live Global Maritime Ship Tracking)

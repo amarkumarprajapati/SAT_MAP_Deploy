@@ -1,0 +1,157 @@
+name: sat-map
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sat_map}
+      MYSQL_USER: ${MYSQL_USER:-sat_map}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in the root .env file}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in the root .env file}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - app
+
+  phpmyadmin:
+    image: phpmyadmin:5-apache
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      UPLOAD_LIMIT: 64M
+    ports:
+      - "${PHPMYADMIN_PORT:-8080}:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app
+
+  osint:
+    build:
+      context: ./osint
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - app
+
+  backend:
+    build:
+      context: ./SAT_MAP_Backend
+      dockerfile_inline: |
+        FROM python:3.12-slim
+        ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+        WORKDIR /app
+        COPY requirements.txt .
+        RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
+        COPY . .
+        RUN mkdir -p /app/.cache /app/data && useradd --system app && chown -R app:app /app
+        USER app
+        EXPOSE 8569
+        CMD ["python", "run.py"]
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      APP_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8569
+      RELOAD: "false"
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_NAME: ${MYSQL_DATABASE:-sat_map}
+      DATABASE_USER: ${MYSQL_USER:-sat_map}
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in the root .env file}
+      LEGACY_DATABASE_PATH: /app/data/sat_map.sqlite3
+      DATABASE_REQUIRED: "true"
+      OSINT_SERVICE_URL: http://osint:3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:7890}
+    volumes:
+      - backend_cache:/app/.cache
+      - backend_data:/app/data
+    expose:
+      - "8569"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      osint:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8569/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - app
+
+  frontend:
+    build:
+      context: ./SAT_MAP_Frontend
+      dockerfile_inline: |
+        FROM node:22-alpine AS deps
+        WORKDIR /app
+        COPY package.json package-lock.json ./
+        RUN npm ci
+        FROM node:22-alpine AS builder
+        WORKDIR /app
+        COPY --from=deps /app/node_modules ./node_modules
+        COPY . .
+        RUN mkdir -p public && npm run build
+        FROM node:22-alpine AS runner
+        WORKDIR /app
+        ENV NODE_ENV=production
+        RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+        COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+        COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+        COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+        USER nextjs
+        EXPOSE 7890
+        ENV PORT=7890 HOSTNAME=0.0.0.0
+        CMD ["node", "server.js"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 7890
+      HOSTNAME: 0.0.0.0
+      FASTAPI_URL: http://backend:8569
+    ports:
+      - "${FRONTEND_PORT:-7890}:7890"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:7890').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - app
+
+volumes:
+  mysql_data:
+  backend_cache:
+  backend_data:
+
+networks:
+  app:
+    driver: bridge

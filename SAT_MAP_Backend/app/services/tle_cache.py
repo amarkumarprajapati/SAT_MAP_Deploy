@@ -259,4 +259,4 @@ async def restore_database_cache() -> None:
         # Mark stale so the first API request attempts a refresh and backfills
         # from this catalogue if the upstream provider is unavailable.
         _cache_time = time.time() - _CACHE_TTL - 1
-        logger.info("Restored %d TLE records from PostgreSQL", len(saved))
+        logger.info("Restored %d TLE records from SQLite", len(saved))

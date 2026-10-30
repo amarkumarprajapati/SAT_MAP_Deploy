@@ -48,13 +48,13 @@ The target PC must run 64-bit Windows. It does not need Node.js, Python, npm, or
 1. Copy `SAT Map Setup.exe` to the target PC and double-click it.
 2. Follow the installer prompts.
 3. Open SAT Map from the desktop shortcut or Start menu.
-4. The app shows database, OSINT, backend, and frontend startup status, then opens the map after the services respond. Service consoles stay hidden.
+4. The app shows OSINT, backend, and frontend startup status, then opens the map after the services respond. Service consoles stay hidden. API snapshots persist in a local SQLite file.
 
 The app uses local ports 7890 (frontend), 8569 (backend), and 15673 (OSINT); those ports must be free. Live data requires internet. Windows may show a SmartScreen warning because the installer is not code-signed.
 
 ## Database behavior
 
-PostgreSQL is not included in this build. The app starts without it, but database-backed snapshot persistence is disabled. Features requiring persisted database data need PostgreSQL installed and configured separately.
+The app stores API snapshots in `data/sat_map.sqlite3` beside its bundled services. SQLite is included with Python, so no external database server is needed.
 
 ## If the build fails
 
