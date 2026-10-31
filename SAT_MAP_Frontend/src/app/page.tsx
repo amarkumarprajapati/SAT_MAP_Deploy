@@ -551,6 +551,7 @@ export default function Dashboard() {
     ship_cargo: false,
     ship_tanker: false,
     ship_military: false,
+    ship_heatmap: false,
     satellites: true,
     sat_comms: false,
     sat_military: true,
@@ -1458,6 +1459,11 @@ export default function Dashboard() {
       </ErrorBoundary>
       <RightTacticalDock
         isAreaDrawerOpen={areaDrawerOpen}
+        onOpenShipHeatmap={() => {
+          setAreaDrawerOpen(true);
+          setActiveLayers((prev) => ({ ...prev, ship_heatmap: true, ship_cargo: true, ship_tanker: true, ship_military: true }));
+          if (!analysisArea) setAreaDrawMode(true);
+        }}
         onToggleAreaDrawer={() => {
           setAreaDrawerOpen((open) => !open);
         }}
@@ -1470,10 +1476,10 @@ export default function Dashboard() {
           <div className="mb-3 flex items-center justify-between">
             <div>
               <div className="font-mono text-xs font-bold tracking-[.18em] text-cyan-200">
-                SATELLITE ACCESS
+                {activeLayers.ship_heatmap ? "VESSEL ACTIVITY HEAT MAP" : "SATELLITE ACCESS"}
               </div>
               <div className="mt-1 text-[10px] text-zinc-400">
-                Draw a map area, then forecast orbital passes
+                {activeLayers.ship_heatmap ? "Draw an area to estimate stale AIS vessel locations" : "Draw a map area, then forecast orbital passes"}
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -1514,6 +1520,10 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
+          <button type="button" onClick={() => setActiveLayers((prev) => ({ ...prev, ship_heatmap: !prev.ship_heatmap, ...(prev.ship_heatmap ? {} : { ship_cargo: true, ship_tanker: true, ship_military: true }) }))} className={`mt-2 flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-bold ${activeLayers.ship_heatmap ? "border-amber-300/50 bg-amber-300/15 text-amber-100" : "border-white/10 bg-black/20 text-zinc-400 hover:text-white"}`}>
+            {activeLayers.ship_heatmap ? "Vessel heat map enabled" : "Enable vessel heat map"}
+          </button>
+          {activeLayers.ship_heatmap && !analysisArea && <p className="mt-2 text-[10px] text-amber-200">Select an area to display estimated vessel positions there.</p>}
           <div className="grid grid-cols-2 gap-1.5">
             {(
               [

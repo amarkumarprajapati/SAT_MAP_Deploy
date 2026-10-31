@@ -216,3 +216,10 @@ html, body {
 .dashboard-data-table .ant-pagination .ant-pagination-total-text {
   color: #a8b4c4;
 }
+@keyframes marine-wave-drift {
+  from { transform: translateX(0); }
+  to { transform: translateX(-24px); }
+}
+.marine-wave { fill: none; stroke: currentColor; stroke-width: 1.2; animation: marine-wave-drift 4s linear infinite; }
+.marine-wave-two { animation-duration: 6s; opacity: .65; }
+@media (prefers-reduced-motion: reduce) { .marine-wave { animation: none; } }

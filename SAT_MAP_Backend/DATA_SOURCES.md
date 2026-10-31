@@ -56,11 +56,16 @@ The backend combines two real-time AIS (Automatic Identification System) feeds t
 - **Internal Processing & Features:**
   - Auto-reconnecting background daemon with heartbeats (ping interval: 30s).
   - In-memory vessel hash table (`_ships`, up to 20,000 ships) with LRU eviction.
-  - **Dynamic Port Congestion Analysis:** Calculates waiting vessels (speed < 0.5 knots within 50 km of 40+ major global ports like Shanghai, Singapore, Rotterdam, Fujairah, etc.) to estimate port dwell times (`NORMAL`, `CONGESTED`, `SEVERE`).
-  - **Strategic Chokepoint Risk:** Evaluates live traffic counts across 10 critical bottlenecks (Strait of Hormuz, Strait of Malacca, Suez Canal, Bab el-Mandeb, Taiwan Strait, Panama Canal).
+  - Port and chokepoint overlays currently return empty arrays. No static geographic catalogs are bundled; live AIS vessel tracking remains available independently.
   - **Targeted Streaming:** Broadcasts updates over WebSocket (`/api/maritime/stream?mmsi={mmsi}`) so clients only stream the vessels they are actively inspecting.
 
-### 1.2 Fintraffic Digitraffic — Baltic & Northern Europe Supplement
+### 1.2 USCG Vessel Information Verification Service (VIVS)
+- **Source Service:** U.S. Coast Guard NAVCEN VIVS (`https://www.navcen.uscg.gov/ais-vivs-home`)
+- **Access:** Manual web lookup by vessel identifiers; no public API is documented.
+- **Coverage:** AIS data received within the USCG Nationwide AIS area; not worldwide and may lag by up to two business days.
+- **Backend:** The platform uses dimensions from its AIS feeds when reported. USCG VIVS is a manual verification link and is not scraped or polled by the backend.
+
+### 1.3 Fintraffic Digitraffic — Baltic & Northern Europe Supplement
 - **Source Service:** Fintraffic Marine API (Finnish Transport Infrastructure Agency)
 - **Transport / Protocol:** MQTT v3.1.1 over WebSockets with TLS (`wss://meri.digitraffic.fi:443/mqtt`)
 - **Backend Service:** [`app/services/digitraffic_ais.py`](app/services/digitraffic_ais.py)

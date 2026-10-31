@@ -3,11 +3,13 @@
 interface RightTacticalDockProps {
   isAreaDrawerOpen: boolean;
   onToggleAreaDrawer: () => void;
+  onOpenShipHeatmap: () => void;
 }
 
 export default function RightTacticalDock({
   isAreaDrawerOpen,
   onToggleAreaDrawer,
+  onOpenShipHeatmap,
 }: RightTacticalDockProps) {
   return (
     <aside
@@ -29,6 +31,12 @@ export default function RightTacticalDock({
           "linear-gradient(180deg, rgba(18,22,27,0.92), rgba(8,11,15,0.88))",
       }}
     >
+      <div className="relative group flex justify-center w-full">
+        <button type="button" onClick={onOpenShipHeatmap} aria-label="Select area and show vessel heat map" title="Vessel activity heat map" className="flex h-10 w-10 items-center justify-center rounded-[14px] border border-transparent text-amber-300/75 transition hover:border-amber-300/20 hover:bg-amber-300/10 hover:text-amber-200">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 5.5 8 3l8 2.5L21 3v15.5L16 21l-8-2.5L3 21z"/><path d="M8 3v15.5M16 5.5V21M11 9c0-1.2 1.1-2.3 2.1-3.5 1 1.2 2.1 2.3 2.1 3.5a2.1 2.1 0 1 1-4.2 0Z"/></svg>
+        </button>
+        <div className="pointer-events-none invisible absolute left-full top-1/2 z-[220] ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg border border-white/10 bg-[#090d13]/95 px-3 py-2 font-mono text-[10px] text-zinc-100 opacity-0 transition group-hover:visible group-hover:opacity-100">VESSEL AREA HEAT MAP</div>
+      </div>
       {/* Orbital Intelligence control */}
       <div className="relative group flex justify-center w-full">
         <button

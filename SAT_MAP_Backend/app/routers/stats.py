@@ -14,7 +14,6 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from ..services import ais_stream, tle_cache
-from .maritime import PORTS
 from . import flights
 
 logger = logging.getLogger("ltmap.stats")
@@ -41,8 +40,8 @@ async def _compute_stats() -> dict[str, int]:
     # 2. Satellites count
     sat_count = tle_cache.catalogue_size()
 
-    # 3. Maritime count (ships + ports)
-    maritime_count = ais_stream.ship_count() + len(PORTS)
+    # 3. Maritime count (live AIS ships)
+    maritime_count = ais_stream.ship_count()
 
     return {
         "flights": flight_count,
@@ -54,7 +53,7 @@ async def _compute_stats() -> dict[str, int]:
 @router.get("")
 async def get_stats():
     """
-    Platform summary statistics: total active tracked flights, satellites, maritime vessels and ports.
+    Platform summary statistics: total active tracked flights, satellites, and AIS maritime vessels.
     """
     global _snapshot, _snapshot_time
 

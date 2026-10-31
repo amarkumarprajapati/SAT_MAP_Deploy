@@ -39,6 +39,9 @@ import { getLocationTimeInfo, formatTimeInZone } from "@/lib/country-time";
 import { api, styleUrl, mapImageryTileUrl } from "@/config/api";
 import { X, Play, Pause, FastForward } from "lucide-react";
 import ShipDetailPanel from "@/components/ShipDetailPanel";
+import MarineConditions from "@/components/MarineConditions";
+import ShipRoutePlaybackBar from "@/components/ShipRoutePlaybackBar";
+import { vesselIconKey, vesselIconScale, vesselSizeClass } from "@/lib/vessel-size";
 import { calculateVoyageDetails } from "@/lib/maritime-route";
 
 function SatellitePlaybackBar({
@@ -829,6 +832,15 @@ function LTmap({
       map.dragPan.enable();
     };
   }, [mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    const visibility = activeLayers.ship_heatmap && selectedAnalysisArea ? "visible" : "none";
+    for (const id of ["ship-uncertainty-heat", "ship-uncertainty-area", "ship-uncertainty-outline"]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", visibility);
+    }
+  }, [mapReady, activeLayers.ship_heatmap, selectedAnalysisArea]);
   useEffect(() => {
     if (!mapReady || !selectedAnalysisArea) return;
     const map = mapRef.current;
@@ -1063,6 +1075,36 @@ function LTmap({
   }, [selectedShip]);
 
   useEffect(() => {
+    const onPlayback = (event: Event) => {
+      const detail = (event as CustomEvent<{ship: Record<string, unknown>; point: {lat?: number; lng?: number; heading?: number}; route: Array<{lat?: number; lng?: number}>; started?: boolean}>).detail;
+      const map = mapRef.current;
+      if (!map || !detail?.point || !Number.isFinite(Number(detail.point.lat)) || !Number.isFinite(Number(detail.point.lng))) return;
+      const coords = detail.route.map(p => [Number(p.lng), Number(p.lat)] as [number, number]).filter(p => p.every(Number.isFinite));
+      const routeSource = map.getSource("selected-ship-route") as maplibregl.GeoJSONSource | undefined;
+      const markerSource = map.getSource("selected-ship-marker") as maplibregl.GeoJSONSource | undefined;
+      const point = detail.point;
+      const type = String(detail.ship.type ?? "cargo").toLowerCase();
+      const safeType = type === "tanker" || type === "military" || type === "container" ? type : "cargo";
+      const movingShip = { ...detail.ship, type: safeType };
+      markerSource?.setData({ type: "FeatureCollection", features: [{ type: "Feature", properties: { kind: "selected-vessel", type: safeType, heading: point.heading ?? detail.ship.heading ?? 0, name: String(detail.ship.name ?? "VESSEL"), iconKey: vesselIconKey(movingShip, true), iconScale: vesselIconScale(movingShip) }, geometry: { type: "Point", coordinates: [Number(point.lng), Number(point.lat)] } }] });
+      for (const id of ["selected-ship-vessel", "selected-ship-vessel-name", "selected-ship-halo"]) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
+      }
+      if (detail.started && coords.length > 1) {
+        routeSource?.setData({ type: "FeatureCollection", features: [
+          { type: "Feature", properties: { kind: "playback-route" }, geometry: { type: "LineString", coordinates: coords } },
+          { type: "Feature", properties: { kind: "route-start" }, geometry: { type: "Point", coordinates: coords[0] } },
+          { type: "Feature", properties: { kind: "route-end" }, geometry: { type: "Point", coordinates: coords[coords.length - 1] } },
+        ] });
+        const longitudes = coords.map(([lng]) => lng), latitudes = coords.map(([, lat]) => lat);
+        map.fitBounds([[Math.min(...longitudes), Math.min(...latitudes)], [Math.max(...longitudes), Math.max(...latitudes)]], { padding: { top: 100, right: 110, bottom: 175, left: 110 }, duration: 900, maxZoom: 10 });
+      }
+    };
+    window.addEventListener("ltmap:ship-route-playback", onPlayback);
+    return () => window.removeEventListener("ltmap:ship-route-playback", onPlayback);
+  }, [mapReady]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !selectedShip) return;
     const updatePosition = () => {
@@ -1090,6 +1132,9 @@ function LTmap({
     const map = mapRef.current;
     const sourceId = "selected-ship-route";
     map.addSource(sourceId, { type: "geojson", data: EMPTY_FC });
+    map.addSource("selected-ship-marker", { type: "geojson", data: EMPTY_FC });
+    map.addLayer({ id: "selected-ship-playback-line", type: "line", source: sourceId, filter: ["==", ["get", "kind"], "playback-route"], paint: { "line-color": "#ffd600", "line-width": 2.5, "line-opacity": 0.9, "line-dasharray": [2, 1] } });
+    map.addLayer({ id: "selected-ship-route-endpoints", type: "circle", source: sourceId, filter: ["in", ["get", "kind"], ["literal", ["route-start", "route-end"]]], paint: { "circle-radius": 5, "circle-color": ["match", ["get", "kind"], "route-start", "#34d399", "#fbbf24"], "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 } });
 
     // 5. Selected Vessel Under-Halo
     map.addLayer({
@@ -1116,6 +1161,8 @@ function LTmap({
         "circle-stroke-width": 1.5,
       },
     });
+    map.addLayer({ id: "selected-ship-playback-halo", type: "circle", source: "selected-ship-marker", paint: { "circle-radius": 17, "circle-color": "#ffd600", "circle-opacity": 0.3, "circle-blur": 0.6 } });
+    map.addLayer({ id: "selected-ship-playback-marker", type: "symbol", source: "selected-ship-marker", layout: { "icon-image": ["coalesce", ["get", "iconKey"], "ship-selected-unknown-cargo"], "icon-size": ["*", 1.15, ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]], "icon-rotate": ["coalesce", ["get", "heading"], 0], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true }, paint: { "icon-opacity": 1 } });
 
     // 6. Selected Vessel Symbol (Changes the ship icon itself to glowing gold!)
     map.addLayer({
@@ -1124,30 +1171,8 @@ function LTmap({
       source: sourceId,
       filter: ["==", ["get", "kind"], "selected-vessel"],
       layout: {
-        "icon-image": [
-          "match",
-          ["get", "type"],
-          "tanker",
-          "ship-marker-tanker-selected",
-          "military",
-          "ship-marker-military-selected",
-          "container",
-          "ship-marker-container-selected",
-          "cargo",
-          "ship-marker-cargo-selected",
-          "ship-marker-selected",
-        ],
-        "icon-size": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          1,
-          0.75,
-          5,
-          1.05,
-          10,
-          1.4,
-        ],
+        "icon-image": ["coalesce", ["get", "iconKey"], "ship-selected-unknown-cargo"],
+        "icon-size": ["*", ["interpolate", ["linear"], ["zoom"], 1, 0.75, 5, 1.05, 10, 1.4], ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]],
         "icon-rotate": ["coalesce", ["get", "heading"], 0],
         "icon-rotation-alignment": "map",
         "icon-allow-overlap": true,
@@ -1180,6 +1205,10 @@ function LTmap({
     });
 
     const layerIds = [
+      "selected-ship-route-endpoints",
+      "selected-ship-playback-line",
+      "selected-ship-playback-marker",
+      "selected-ship-playback-halo",
       "selected-ship-vessel-name",
       "selected-ship-vessel",
       "selected-ship-halo",
@@ -1189,6 +1218,7 @@ function LTmap({
       for (const id of layerIds) {
         if (map.getLayer(id)) map.removeLayer(id);
       }
+      if (map.getSource("selected-ship-marker")) map.removeSource("selected-ship-marker");
       if (map.getSource(sourceId)) map.removeSource(sourceId);
     };
   }, [mapReady]);
@@ -1201,10 +1231,17 @@ function LTmap({
     if (!source) return;
     if (!selectedShip) {
       source.setData(EMPTY_FC);
+      const marker = map?.getSource("selected-ship-marker") as maplibregl.GeoJSONSource | undefined;
+      marker?.setData(EMPTY_FC);
+      for (const id of ["selected-ship-vessel", "selected-ship-vessel-name", "selected-ship-halo"]) {
+        if (map?.getLayer(id)) map.setLayoutProperty(id, "visibility", "visible");
+      }
       return;
     }
 
     const voyage = calculateVoyageDetails(selectedShip);
+    const route = (Array.isArray(selectedShip.track) ? selectedShip.track : []) as Array<{lat?: number; lng?: number}>;
+    const coords = route.map(point => [Number(point.lng), Number(point.lat)] as [number, number]).filter(point => point.every(Number.isFinite));
     const features: GeoJSON.Feature[] = [];
 
     // Selected vessel icon: selection is communicated by color only.
@@ -1214,6 +1251,8 @@ function LTmap({
         kind: "selected-vessel",
         type: voyage.vesselCategory,
         heading: voyage.headingDeg,
+        iconKey: vesselIconKey(selectedShip, true),
+        iconScale: vesselIconScale(selectedShip),
         name: String(
           selectedShip.name ||
             (selectedShip.mmsi ? `MMSI ${selectedShip.mmsi}` : "Vessel"),
@@ -1225,7 +1264,18 @@ function LTmap({
       },
     });
 
+    if (coords.length > 1) {
+      features.push({ type: "Feature", properties: { kind: "playback-route" }, geometry: { type: "LineString", coordinates: coords } });
+      features.push({ type: "Feature", properties: { kind: "route-start" }, geometry: { type: "Point", coordinates: coords[0] } });
+      features.push({ type: "Feature", properties: { kind: "route-end" }, geometry: { type: "Point", coordinates: coords[coords.length - 1] } });
+    }
+
     source.setData({ type: "FeatureCollection", features });
+    const playback = mapRef.current?.getSource("selected-ship-marker") as maplibregl.GeoJSONSource | undefined;
+    playback?.setData(EMPTY_FC);
+    for (const id of ["selected-ship-vessel", "selected-ship-vessel-name", "selected-ship-halo"]) {
+      if (mapRef.current?.getLayer(id)) mapRef.current.setLayoutProperty(id, "visibility", "visible");
+    }
   }, [selectedShip]);
   useEffect(() => {
     if (
@@ -1501,12 +1551,25 @@ function LTmap({
         hullColor: string,
         detailColor: string,
         typeKind: "cargo" | "tanker" | "military" = "cargo",
+        sizeClass: "small" | "medium" | "large" | "very_large" | "unknown" = "medium",
       ) => {
         if (map.hasImage(id)) return;
         const canvas = document.createElement("canvas");
         canvas.width = 32;
         canvas.height = 32;
         const ctx = canvas.getContext("2d")!;
+
+        const shapeScale = {
+          small: [0.66, 0.78],
+          medium: [0.84, 0.9],
+          large: [1, 1.04],
+          very_large: [1.12, 1.18],
+          unknown: [0.84, 0.9],
+        }[sizeClass];
+        ctx.save();
+        ctx.translate(16, 16);
+        ctx.scale(shapeScale[0], shapeScale[1]);
+        ctx.translate(-16, -16);
 
         ctx.shadowColor = hullColor;
         ctx.shadowBlur = 4;
@@ -1613,6 +1676,7 @@ function LTmap({
           ctx.fill();
         }
 
+        ctx.restore();
         map.addImage(id, {
           width: 32,
           height: 32,
@@ -1630,6 +1694,14 @@ function LTmap({
         "#f87171",
         "military",
       );
+
+      const sizeClasses = ["small", "medium", "large", "very_large", "unknown"] as const;
+      for (const sizeClass of sizeClasses) {
+        for (const [type, hull, detail] of [["cargo", "#00e5ff", "#38bdf8"], ["tanker", "#ff9500", "#fbbf24"], ["military", "#ff1744", "#f87171"]] as const) {
+          registerShipIcon(`ship-${sizeClass}-${type}`, hull, detail, type, sizeClass);
+          registerShipIcon(`ship-selected-${sizeClass}-${type}`, "#ffd600", "#fffbeb", type, sizeClass);
+        }
+      }
 
       // Highlighted Selected Vessel Icons (luminous gold hull with ivory superstructure)
       registerShipIcon("ship-marker-selected", "#ffd600", "#fffbeb", "cargo");
@@ -1666,6 +1738,7 @@ function LTmap({
         "maritime",
         "maritime-choke",
         "maritime-ships",
+        "ship-uncertainty",
         "sat-ships-in-view",
         "geospatial-video-track",
         "geospatial-video-frame",
@@ -2049,34 +2122,27 @@ function LTmap({
 
       // Maritime Ships
       map.addLayer({
+        id: "ship-uncertainty-heat",
+        type: "heatmap",
+        source: "ship-uncertainty",
+        filter: ["==", ["get", "kind"], "estimate"],
+        paint: {
+          "heatmap-weight": ["coalesce", ["get", "weight"], 0.4],
+          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 2, 0.65, 8, 1.25],
+          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 2, 18, 8, 36],
+          "heatmap-opacity": 0.8,
+          "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(0,229,255,0)", 0.25, "rgba(0,229,255,.22)", 0.55, "rgba(255,190,0,.55)", 1, "rgba(255,45,80,.82)"],
+        },
+      });
+      map.addLayer({ id: "ship-uncertainty-area", type: "fill", source: "ship-uncertainty", filter: ["==", ["get", "kind"], "uncertainty"], paint: { "fill-color": "#ffb020", "fill-opacity": 0.12 } });
+      map.addLayer({ id: "ship-uncertainty-outline", type: "line", source: "ship-uncertainty", filter: ["==", ["get", "kind"], "uncertainty"], paint: { "line-color": "#ffc857", "line-width": 1.25, "line-dasharray": [2, 2], "line-opacity": 0.8 } });
+      map.addLayer({
         id: "ship-dots",
         type: "symbol",
         source: "maritime-ships",
         layout: {
-          "icon-image": [
-            "match",
-            ["get", "type"],
-            "tanker",
-            "ship-marker-tanker",
-            "military",
-            "ship-marker-military",
-            "container",
-            "ship-marker-container",
-            "cargo",
-            "ship-marker-cargo",
-            "ship-marker",
-          ],
-          "icon-size": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            1,
-            0.52,
-            5,
-            0.72,
-            10,
-            0.95,
-          ],
+          "icon-image": ["coalesce", ["get", "iconKey"], "ship-unknown-cargo"],
+          "icon-size": ["*", ["interpolate", ["linear"], ["zoom"], 1, 0.52, 5, 0.72, 10, 0.95], ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]],
           "icon-rotate": ["coalesce", ["get", "heading"], 0],
           "icon-rotation-alignment": "map",
           "icon-allow-overlap": true,
@@ -2690,6 +2756,7 @@ function LTmap({
       if (pendingShipsTimeoutRef.current)
         clearTimeout(pendingShipsTimeoutRef.current);
       setGeo("maritime-ships", []);
+      setGeo("ship-uncertainty", []);
       return;
     }
 
@@ -2708,8 +2775,45 @@ function LTmap({
       });
 
       const features = new Array(ships.length);
+      const uncertaintyFeatures: GeoJSON.Feature[] = [];
+      const nowSeconds = Date.now() / 1000;
+      const areaRing = selectedAnalysisArea?.geometry?.coordinates[0];
+      const isInArea = (lat: number, lng: number) => {
+        if (!selectedAnalysisArea) return false;
+        if (!areaRing?.length) return lng >= selectedAnalysisArea.west && lng <= selectedAnalysisArea.east && lat >= selectedAnalysisArea.south && lat <= selectedAnalysisArea.north;
+        let inside = false;
+        for (let i = 0, j = areaRing.length - 1; i < areaRing.length; j = i++) {
+          const [xi, yi] = areaRing[i], [xj, yj] = areaRing[j];
+          if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+        }
+        return inside;
+      };
       for (let i = 0; i < ships.length; i++) {
         const s = ships[i];
+        const lat = Number(s.lat), lng = Number(s.lng);
+        const rawSeen = Number(s.lastSeenAt ?? s.timestamp);
+        const seenSeconds = rawSeen > 1e12 ? rawSeen / 1000 : rawSeen;
+        const ageHours = seenSeconds > 0 ? Math.max(0, (nowSeconds - seenSeconds) / 3600) : 0;
+        const stale = ageHours >= 0.25;
+        if (stale && Number.isFinite(lat) && Number.isFinite(lng)) {
+          const speedKnots = Math.max(0, Math.min(40, Number(s.speed) || 0));
+          const headingRad = ((Number(s.heading) || 0) * Math.PI) / 180;
+          const travelKm = Math.min(250, speedKnots * 1.852 * ageHours);
+          const predictedLat = lat + (travelKm * Math.cos(headingRad)) / 111;
+          const predictedLng = lng + (travelKm * Math.sin(headingRad)) / (111 * Math.max(0.15, Math.cos((lat * Math.PI) / 180)));
+          const radiusKm = Math.min(80, Math.max(2, travelKm * 0.35 + ageHours * 1.5));
+          const visibleInArea = !activeLayers.ship_heatmap || isInArea(predictedLat, predictedLng);
+          if (visibleInArea) {
+            uncertaintyFeatures.push({ type: "Feature", properties: { weight: Math.min(1, 0.25 + ageHours / 24), kind: "estimate", ageHours }, geometry: { type: "Point", coordinates: [predictedLng, predictedLat] } });
+            if (!activeLayers.ship_heatmap || isInArea(lat, lng)) {
+              const ring = Array.from({ length: 49 }, (_, n) => {
+                const angle = (n / 48) * Math.PI * 2;
+                return [predictedLng + (radiusKm / (111 * Math.max(0.15, Math.cos((predictedLat * Math.PI) / 180)))) * Math.cos(angle), predictedLat + (radiusKm / 111) * Math.sin(angle)];
+              });
+              uncertaintyFeatures.push({ type: "Feature", properties: { kind: "uncertainty", ageHours, uncertaintyKm: radiusKm }, geometry: { type: "Polygon", coordinates: [ring] } });
+            }
+          }
+        }
         features[i] = {
           type: "Feature",
           geometry: { type: "Point", coordinates: [s.lng, s.lat] },
@@ -2718,6 +2822,14 @@ function LTmap({
             type: s.type || "cargo",
             speed: s.speed,
             heading: s.heading,
+            length: s.length,
+            width: s.width,
+            draught: s.draught,
+            aisTypeCode: s.aisTypeCode,
+            sizeClass: vesselSizeClass(s),
+            sizeSource: s.sizeSource,
+            iconKey: vesselIconKey(s),
+            iconScale: vesselIconScale(s),
             destination: s.destination,
             flag: s.flag,
             mmsi: s.mmsi,
@@ -2735,6 +2847,7 @@ function LTmap({
         };
       }
       setGeo("maritime-ships", features);
+      setGeo("ship-uncertainty", uncertaintyFeatures);
     };
 
     const now = Date.now();
@@ -2767,6 +2880,8 @@ function LTmap({
     activeLayers.ship_cargo,
     activeLayers.ship_tanker,
     activeLayers.ship_military,
+    activeLayers.ship_heatmap,
+    selectedAnalysisArea,
     setGeo,
   ]);
 
@@ -2852,6 +2967,11 @@ function LTmap({
             type: s.type || "cargo",
             speed: s.speed,
             heading: s.heading,
+            length: s.length,
+            width: s.width,
+            aisTypeCode: s.aisTypeCode,
+            sizeClass: vesselSizeClass(s),
+            sizeSource: s.sizeSource,
             destination: s.destination,
             flag: s.flag,
             mmsi: s.mmsi,
@@ -2892,6 +3012,11 @@ function LTmap({
             s.heading != null && Number.isFinite(Number(s.heading))
               ? Number(s.heading)
               : undefined,
+          length: s.length != null ? Number(s.length) : undefined,
+          width: s.width != null ? Number(s.width) : undefined,
+          aisTypeCode: s.aisTypeCode != null ? Number(s.aisTypeCode) : undefined,
+          sizeClass: vesselSizeClass(s),
+          sizeSource: String(s.sizeSource ?? "unreported"),
           lat: sLat,
           lng: sLng,
           destination: String(s.destination || ""),
@@ -3927,6 +4052,7 @@ function LTmap({
   return (
     <>
       <div ref={containerRef} className="absolute inset-0 w-full h-full" />
+      {mapReady && <MarineConditions mapRef={mapRef} />}
       {selectedShip && (
         <ShipDetailPanel
           ship={selectedShip}
@@ -3938,6 +4064,7 @@ function LTmap({
           }}
         />
       )}
+      {selectedShip && <ShipRoutePlaybackBar key={String(selectedShip.mmsi ?? selectedShip.id ?? "ship")} ship={selectedShip} />}
       {mapReady && (
         <MapPopups
           mapRef={mapRef}

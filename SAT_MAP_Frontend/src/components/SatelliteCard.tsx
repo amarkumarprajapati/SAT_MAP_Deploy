@@ -42,6 +42,11 @@ export interface SatelliteDetail {
     lat: number;
     lng: number;
     heading?: number;
+    length?: number;
+    width?: number;
+    aisTypeCode?: number;
+    sizeClass?: string;
+    sizeSource?: string;
     flag?: string;
     distanceKm?: number;
     lastSeenAt?: number;

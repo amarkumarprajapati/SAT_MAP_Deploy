@@ -87,6 +87,67 @@ def _get_ship_type(type_code: int) -> str:
     return "cargo"
 
 
+def _size_class(length: Any, ais_type_code: Any = None) -> tuple[str, str]:
+    """Classify vessel size from AIS LOA, with an explicitly marked type fallback."""
+    try:
+        length_m = float(length)
+    except (TypeError, ValueError):
+        length_m = 0
+    if length_m > 0:
+        if length_m < 50:
+            return "small", "ais_dimensions"
+        if length_m < 120:
+            return "medium", "ais_dimensions"
+        if length_m < 250:
+            return "large", "ais_dimensions"
+        return "very_large", "ais_dimensions"
+    try:
+        code = int(ais_type_code or 0)
+    except (TypeError, ValueError):
+        code = 0
+    if 30 <= code <= 39 or 50 <= code <= 59:
+        return "small", "ais_type_estimate"
+    if 60 <= code <= 69:
+        return "medium", "ais_type_estimate"
+    if 70 <= code <= 89:
+        return "large", "ais_type_estimate"
+    return "unknown", "unreported"
+
+
+def _normalize_ship_size(ship: dict[str, Any]) -> None:
+    """Read common AIS dimension variants and attach display-ready size metadata."""
+    dimension = ship.get("dimension") or ship.get("Dimension") or {}
+    if not isinstance(dimension, dict):
+        dimension = {}
+    def number(*values: Any) -> float:
+        for value in values:
+            try:
+                parsed = float(value)
+                if parsed > 0:
+                    return parsed
+            except (TypeError, ValueError):
+                continue
+        return 0.0
+    length = number(ship.get("length"), ship.get("length_m"))
+    width = number(ship.get("width"), ship.get("width_m"))
+    if not length:
+        length = number(dimension.get("A")) + number(dimension.get("B"))
+    if not width:
+        width = number(dimension.get("C")) + number(dimension.get("D"))
+    if length:
+        ship["length"] = length
+    if width:
+        ship["width"] = width
+    if not ship.get("draught") and ship.get("MaximumStaticDraught") is not None:
+        ship["draught"] = ship.get("MaximumStaticDraught")
+    size_class, source = _size_class(length, ship.get("aisTypeCode"))
+    ship["sizeClass"] = size_class
+    if length and ship.get("sizeSource") != "vesselfinder_masterdata":
+        ship["sizeSource"] = "ais_dimensions"
+    elif not length:
+        ship["sizeSource"] = source
+
+
 async def _handle_message(raw: str | bytes) -> None:
     """Process one AIS message from the WebSocket stream."""
     try:
@@ -152,10 +213,37 @@ async def _handle_message(raw: str | bytes) -> None:
                     existing["name"] = static["Name"].strip()
                 if static.get("Destination"):
                     existing["destination"] = static["Destination"].strip()
-                existing["type"] = _get_ship_type(static.get("Type", 0))
+                ais_type_code = static.get("Type") or static.get("ShipType") or 0
+                try:
+                    ais_type_code = int(ais_type_code)
+                except (TypeError, ValueError):
+                    ais_type_code = 0
+                existing["aisTypeCode"] = ais_type_code
+                existing["type"] = _get_ship_type(ais_type_code)
+                # AIS static dimensions use four reference offsets (metres).
+                # Sum bow/stern and port/starboard offsets into overall size.
+                dimension = static.get("Dimension") or {}
+                try:
+                    length = float(dimension.get("A", 0)) + float(dimension.get("B", 0))
+                    width = float(dimension.get("C", 0)) + float(dimension.get("D", 0))
+                    if length > 0:
+                        existing["length"] = length
+                    if width > 0:
+                        existing["width"] = width
+                except (TypeError, ValueError, AttributeError):
+                    pass
+                draught_value = static.get("MaximumStaticDraught", static.get("Draught"))
+                if draught_value is not None:
+                    try:
+                        draught = float(draught_value)
+                        if draught > 0:
+                            existing["draught"] = draught
+                    except (TypeError, ValueError):
+                        pass
 
         # Only store if we have a position
         if existing.get("lat") is not None and existing.get("lng") is not None:
+            _normalize_ship_size(existing)
             _ships[mmsi] = existing
             update = existing.copy()
             for queue in tuple(_ship_subscribers):
@@ -184,6 +272,7 @@ async def ingest_external_ship(mmsi: int, fields: dict[str, Any]) -> None:
         if lat is not None and lng is not None:
             _record_position(existing, float(lat), float(lng), time.time())
         if existing.get("lat") is not None and existing.get("lng") is not None:
+            _normalize_ship_size(existing)
             existing["timestamp"] = time.time()
             _ships[mmsi] = existing
             update = existing.copy()
@@ -279,6 +368,8 @@ async def get_ships() -> list[dict[str, Any]]:
         stale_keys = [k for k, v in _ships.items() if v.get("timestamp", 0) < stale_cutoff]
         for k in stale_keys:
             del _ships[k]
+        for ship in _ships.values():
+            _normalize_ship_size(ship)
         return list(_ships.values())
 
 

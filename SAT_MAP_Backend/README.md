@@ -125,7 +125,7 @@ All endpoints are centrally registered in `app/endpoints.py` under the `/api` pr
 | :--- | :---: | :--- | :--- |
 | `/api/health` | `GET` | Health check, uptime, and endpoints registry | Local |
 | `/api/flights` | `GET` | Live military aircraft positions, types & jamming hotspots | `adsb.fi` / OpenSky |
-| `/api/maritime` | `GET` | Live AIS ship positions, ports, chokepoints & congestion | `aisstream.io` WebSocket |
+| `/api/maritime` | `GET` | Live AIS ship positions; port and chokepoint arrays are empty until a live geographic source is configured | `aisstream.io` WebSocket |
 | `/api/satellites` | `GET` | All active satellites with real-time SGP4 orbital propagation | CelesTrak / SatNOGS |
 | `/api/satellites/orbit` | `GET` | Full single-orbit trajectory trace or live telemetry | Local TLE Cache |
 | `/api/proxy-tiles` | `GET` | CORS proxy for CartoDB / CartoCDN raster map tiles | `cartocdn.com` |
@@ -157,7 +157,7 @@ For the exhaustive technical specification with field-level schemas, see **[DATA
 
 | Domain | 3rd-Party Provider | Protocol | What Data is Received & Processed |
 | :--- | :--- | :--- | :--- |
-| **Maritime (Global)** | **AISStream** (`aisstream.io`) | WebSocket (`wss://`) | **Live AIS vessel tracking:** MMSI, vessel name, coordinates, speed (SOG), heading (COG/TrueHeading), vessel type (cargo, tanker, military), destination. Backend calculates dynamic port congestion & chokepoint transit volumes. |
+| **Maritime (Global)** | **AISStream** (`aisstream.io`) | WebSocket (`wss://`) | **Live AIS vessel tracking:** MMSI, vessel name, coordinates, speed (SOG), heading (COG/TrueHeading), vessel type (cargo, tanker, military), destination. |
 | **Maritime (Baltic / Nordic)** | **Fintraffic Digitraffic** (`digitraffic.fi`) | MQTT over TLS | **Public Finnish/Baltic AIS feed:** High-frequency location updates and vessel metadata, merged into the main in-memory ship registry without API keys. |
 | **Military Flights & GPS Jamming** | **adsb.fi** | HTTPS REST | **Global airborne transponders:** ICAO24 hex, callsigns, airframe models, barometric altitude, ground speed, track heading. Backend classifies military aircraft & detects GPS jamming/spoofing hotspots (`nac_p <= 4`). |
 | **Satellite Orbits (Primary)** | **CelesTrak** (`celestrak.org`) | HTTPS REST | **Two-Line Elements (TLEs):** 13 constellation groups (GPS, GLONASS, Galileo, BeiDou, Weather, Earth Resources, Planet Labs, Military Recon, Radar). Propagated locally using SGP4/SDP4 Keplerian orbital mechanics. |

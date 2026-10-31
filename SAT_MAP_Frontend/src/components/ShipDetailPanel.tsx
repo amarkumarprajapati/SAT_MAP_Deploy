@@ -1,18 +1,17 @@
 "use client";
 
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import {
   Ship,
   X,
-  Compass,
   Radio,
   MapPin,
-  ArrowRight,
   ShieldAlert,
   Fuel,
   Box,
 } from "lucide-react";
 import { calculateVoyageDetails, VoyageDetails } from "@/lib/maritime-route";
+import { vesselSizeClass } from "@/lib/vessel-size";
 
 interface ShipDetailPanelProps {
   ship: Record<string, unknown>;
@@ -54,15 +53,8 @@ export default function ShipDetailPanel({
   const width = reportedNumber(ship.width, ship.dimensionB);
   const dimensions =
     length && width ? `${length}m × ${width}m` : "Not reported";
-  const hasDestination = Boolean(String(ship.destination || "").trim());
-  const firstSeenAt = Number(ship.trackStartAt ?? ship.firstSeenAt);
-  const firstSeenLabel =
-    Number.isFinite(firstSeenAt) && firstSeenAt > 0
-      ? new Date(firstSeenAt < 1e12 ? firstSeenAt * 1000 : firstSeenAt)
-          .toISOString()
-          .replace("T", " ")
-          .slice(0, 16)
-      : "Not reported";
+  const sizeClass = vesselSizeClass(ship).replace("_", " ").toUpperCase();
+  const sizeSource = String(ship.sizeSource || "");
 
   return (
     <aside
@@ -150,110 +142,6 @@ export default function ShipDetailPanel({
 
       {/* ── Content Body ── */}
       <div className="p-2.5 space-y-2.5">
-        {/* ── MarineTraffic Inspired Route & Voyage Card ── */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-2.5 ">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[8px] font-mono uppercase tracking-[0.15em] font-bold text-cyan-400 flex items-center gap-1">
-              <Compass size={10} />
-              VOYAGE & ROUTE TELEMETRY
-            </span>
-            <span className="text-[8px] font-mono text-zinc-500">
-              AIS / ESTIMATE
-            </span>
-          </div>
-
-          {/* Departure vs Destination Ports */}
-          <div className="grid grid-cols-2 gap-2">
-            {/* Start / Departure Port */}
-            <div className="min-w-0 pr-1">
-              <div className="flex items-center gap-1 text-[7.5px] uppercase tracking-wider text-emerald-400 font-bold">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                DEPARTURE / START
-              </div>
-              <div
-                className="mt-0.5 truncate font-bold text-xs text-white"
-                title={voyage.startName}
-              >
-                {typeof ship.trackStartLat === "number" ||
-                typeof ship.firstSeenLat === "number"
-                  ? voyage.startName
-                  : "First observed position"}
-              </div>
-              <div className="mt-0.5 text-[9px] font-mono text-zinc-400">
-                <span className="text-zinc-500">First seen:</span>{" "}
-                {firstSeenLabel}
-              </div>
-            </div>
-
-            {/* End / Destination Port */}
-            <div className="min-w-0 text-right pl-1">
-              <div className="flex items-center justify-end gap-1 text-[7.5px] uppercase tracking-wider text-amber-400 font-bold">
-                DESTINATION / END
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              </div>
-              <div
-                className="mt-0.5 truncate font-bold text-xs text-amber-300 font-mono"
-                title={voyage.endName}
-              >
-                {hasDestination
-                  ? String(ship.destination).trim()
-                  : "Not reported"}
-              </div>
-              <div className="mt-0.5 text-[9px] font-mono text-zinc-400">
-                {hasDestination ? (
-                  <>
-                    <span className="text-zinc-500">ETA:</span> {voyage.etaTime}
-                  </>
-                ) : (
-                  "ETA unavailable"
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Route Progress Line with Directional Ship Arrow (MarineTraffic Style) */}
-          {hasDestination && (
-            <div className="mt-2.5 relative px-1">
-              <div className="h-1 w-full bg-white/10 rounded-full relative overflow-visible">
-                {/* Completed track */}
-                <div
-                  className="h-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-amber-400 rounded-full"
-                  style={{ width: `${voyage.progressPercent}%` }}
-                />
-
-                {/* Start Dot */}
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-emerald-400 border border-[#07101d]" />
-
-                {/* End Dot */}
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-2 h-2 rounded-full bg-amber-400 border border-[#07101d]" />
-
-                {/* Moving Directional Arrow Marker */}
-                <div
-                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-500 flex items-center justify-center"
-                  style={{ left: `${voyage.progressPercent}%` }}
-                >
-                  <div className="relative">
-                    <div className="w-4 h-4 rounded-full bg-cyan-400 text-[#07101d] flex items-center justify-center font-bold animate-pulse">
-                      <ArrowRight size={9} strokeWidth={3} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Distance Summary */}
-              <div className="mt-2 flex items-center justify-between text-[9px] font-mono text-zinc-400">
-                <span className="text-emerald-300">
-                  {voyage.distanceCoveredKm.toFixed(0)} km (
-                  {voyage.progressPercent}%)
-                </span>
-                <span className="text-amber-300">
-                  {voyage.distanceRemainingKm.toFixed(0)} km left
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* ── Marine Telemetry Specifications (MarineTraffic 3-Column Table) ── */}
         <div className="grid grid-cols-3 gap-1.5">
           {/* 1. Navigational Status */}
@@ -329,6 +217,20 @@ export default function ShipDetailPanel({
             >
               {dimensions}
             </div>
+            <div className="mt-0.5 truncate font-mono text-[8px] text-amber-300" title={sizeSource === "ais_type_estimate" ? "Estimated from AIS vessel type because dimensions are unavailable" : "Classified by AIS vessel dimensions when reported"}>
+              {sizeClass} SIZE{sizeSource === "ais_type_estimate" ? " · TYPE ESTIMATE" : " · AIS"}
+            </div>
+            {/^\d{9}$/.test(mmsi) && (
+              <a
+                className="mt-1 inline-block font-mono text-[8px] text-cyan-300 underline underline-offset-2 hover:text-cyan-100"
+                href="https://www.navcen.uscg.gov/ais-vivs-home"
+                target="_blank"
+                rel="noreferrer"
+                title="Manually search this MMSI in the US Coast Guard vessel verification service"
+              >
+                Check USCG VIVS (US coverage)
+              </a>
+            )}
           </div>
         </div>
 

@@ -72,6 +72,8 @@ services:
     volumes:
       - backend_cache:/app/.cache
       - backend_data:/app/data
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8569}:8569"
     expose:
       - "8569"
     depends_on:
