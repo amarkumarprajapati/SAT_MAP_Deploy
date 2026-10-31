@@ -56,8 +56,9 @@ The backend combines two real-time AIS (Automatic Identification System) feeds t
 - **Internal Processing & Features:**
   - Auto-reconnecting background daemon with heartbeats (ping interval: 30s).
   - In-memory vessel hash table (`_ships`, up to 20,000 ships) with LRU eviction.
-  - Port and chokepoint overlays currently return empty arrays. No static geographic catalogs are bundled; live AIS vessel tracking remains available independently.
-  - **Targeted Streaming:** Broadcasts updates over WebSocket (`/api/maritime/stream?mmsi={mmsi}`) so clients only stream the vessels they are actively inspecting.
+  - **Database Persistence:** Streamed vessels and breadcrumbs are continuously batched into MySQL (`ais_vessels` and `ais_track_points` tables) by `app/services/ais_db.py`. On startup, latest vessel state is restored into cache from the database.
+  - **Full WebSocket Feed:** `/api/maritime/ws` pushes real-time full maritime snapshots every 5 seconds (with optional client filtering by type or bounding box).
+  - **Targeted Streaming:** Broadcasts updates over WebSocket (`/api/maritime/stream?mmsi={mmsi}`) so clients can stream specific single vessels they are actively inspecting.
 
 ### 1.2 USCG Vessel Information Verification Service (VIVS)
 - **Source Service:** U.S. Coast Guard NAVCEN VIVS (`https://www.navcen.uscg.gov/ais-vivs-home`)

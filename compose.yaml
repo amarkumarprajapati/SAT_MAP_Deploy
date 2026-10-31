@@ -90,6 +90,29 @@ services:
     networks:
       - app
 
+  ais-recorder:
+    build:
+      context: ./SAT_MAP_Backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "app.services.ais_db"]
+    env_file:
+      - ./.env
+    environment:
+      APP_ENV: production
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_NAME: ${MYSQL_DATABASE:-sat_map}
+      DATABASE_USER: ${MYSQL_USER:-sat_map}
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in the root .env file}
+      DATABASE_REQUIRED: "true"
+      AIS_API_KEY: ${AIS_API_KEY:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app
+
   frontend:
     build:
       context: ./SAT_MAP_Frontend

@@ -121,16 +121,42 @@ Once running, visit:
 
 All endpoints are centrally registered in `app/endpoints.py` under the `/api` prefix:
 
-| Endpoint | Method | Description | Third-Party Source |
+| Endpoint | Method / Protocol | Description | Third-Party Source |
 | :--- | :---: | :--- | :--- |
 | `/api/health` | `GET` | Health check, uptime, and endpoints registry | Local |
 | `/api/flights` | `GET` | Live military aircraft positions, types & jamming hotspots | `adsb.fi` / OpenSky |
-| `/api/maritime` | `GET` | Live AIS ship positions; port and chokepoint arrays are empty until a live geographic source is configured | `aisstream.io` WebSocket |
+| `/api/maritime/ws` | `WebSocket` | Live AIS ship snapshots and real-time pushes (auto-pushes every 5s; supports client-side type and bounding-box filtering) | `aisstream.io` / Digitraffic / MySQL |
+| `/api/maritime/stream` | `WebSocket` | Focused single-vessel real-time tracking by MMSI | `aisstream.io` |
 | `/api/satellites` | `GET` | All active satellites with real-time SGP4 orbital propagation | CelesTrak / SatNOGS |
 | `/api/satellites/orbit` | `GET` | Full single-orbit trajectory trace or live telemetry | Local TLE Cache |
-| `/api/proxy-tiles` | `GET` | CORS proxy for CartoDB / CartoCDN raster map tiles | `cartocdn.com` |
 | `/api/region-dossier` | `GET` | OSINT dossier for coordinates: Reverse geocode, Wikidata & Wikipedia | Photon / Wikidata / Wikipedia |
 | `/api/stats` | `GET` | High-level tracker counters (flights, satellites, maritime) | In-memory aggregations |
+
+---
+
+## AIS Maritime Persistence & Docker Ingestion
+
+When running via **Docker Compose**, the backend container automatically:
+1. Connects to MySQL (`sat_map` database)
+2. Automatically creates the `ais_vessels` (vessel state) and `ais_track_points` (historical positions) tables
+3. Restores the latest vessels from the database upon startup so vessel history survives container restarts
+4. Continuously receives live AIS data from `aisstream.io` and Baltic feeds and flushes batches to MySQL every 2 seconds
+5. Broadcasts live updates to all connected frontend clients via WebSocket at `ws://<host>:8569/api/maritime/ws`
+
+### Standalone AIS Recorder CLI (`app.services.ais_db`)
+
+You can also run or inspect the AIS database directly using `app.services.ais_db`:
+
+```bash
+# Check database vessel and track counts:
+python -m app.services.ais_db --status
+
+# Or inside running Docker:
+docker compose exec backend python -m app.services.ais_db --status
+
+# Run standalone recording worker:
+python -m app.services.ais_db
+```
 
 ### Endpoint Details & Query Parameters
 

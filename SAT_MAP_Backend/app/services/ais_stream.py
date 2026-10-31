@@ -4,21 +4,25 @@ LTmap — AIS WebSocket Stream Manager
 Maintains a persistent WebSocket connection to aisstream.io for live ship
 tracking data. Ported from the frontend's maritime/route.ts WebSocket logic.
 
-Ship records are kept in an in-memory dict, pruned on every snapshot build.
+Ship records are kept in an in-memory dict and persisted to MySQL via ais_db.
+On startup, the in-memory dict is restored from the database.
 The connection auto-reconnects on drop.
 """
 
 import asyncio
+import collections
 import json
 import logging
 import time
 import math
+from datetime import datetime, timezone
 from typing import Any
 
 import websockets
 
 from ..config import settings
 from ..urls import AISSTREAM_WEBSOCKET
+from . import ais_db
 
 logger = logging.getLogger("ltmap.ais")
 
@@ -31,6 +35,11 @@ _ws_task: asyncio.Task | None = None
 _running = False
 MAX_SHIPS = 20_000
 MAX_TRACK_POINTS = 500
+
+# ── Live Incoming Stream Packet Feed ──────────────────────────────────────────
+_recent_incoming_packets: collections.deque[dict[str, Any]] = collections.deque(maxlen=100)
+_total_packets_received: int = 0
+_start_time: float = time.time()
 
 
 def _distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -245,6 +254,8 @@ async def _handle_message(raw: str | bytes) -> None:
         if existing.get("lat") is not None and existing.get("lng") is not None:
             _normalize_ship_size(existing)
             _ships[mmsi] = existing
+            # Persist to database
+            asyncio.ensure_future(ais_db.queue_ship_update(mmsi, existing.copy()))
             update = existing.copy()
             for queue in tuple(_ship_subscribers):
                 if queue.full():
@@ -256,6 +267,26 @@ async def _handle_message(raw: str | bytes) -> None:
                     queue.put_nowait(update)
                 except asyncio.QueueFull:
                     pass
+
+        # Record incoming packet for real-time live monitor
+        global _total_packets_received
+        _total_packets_received += 1
+        pkt = {
+            "id": _total_packets_received,
+            "time": datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3],
+            "source": "aisstream.io",
+            "msg_type": msg_type or "Unknown",
+            "mmsi": mmsi,
+            "name": meta.get("ShipName", "").strip() or existing.get("name", "Unknown"),
+            "lat": round(float(existing["lat"]), 4) if existing.get("lat") is not None else None,
+            "lng": round(float(existing["lng"]), 4) if existing.get("lng") is not None else None,
+            "speed": round(float(existing["speed"]), 1) if existing.get("speed") is not None else 0.0,
+            "heading": round(float(existing["heading"]), 0) if existing.get("heading") is not None else None,
+            "destination": existing.get("destination", ""),
+            "type": existing.get("type", "cargo"),
+            "raw_payload": parsed,
+        }
+        _recent_incoming_packets.appendleft(pkt)
 
         # Evict oldest if too many
         if len(_ships) > MAX_SHIPS:
@@ -275,6 +306,7 @@ async def ingest_external_ship(mmsi: int, fields: dict[str, Any]) -> None:
             _normalize_ship_size(existing)
             existing["timestamp"] = time.time()
             _ships[mmsi] = existing
+            asyncio.ensure_future(ais_db.queue_ship_update(mmsi, existing.copy()))
             update = existing.copy()
             for queue in tuple(_ship_subscribers):
                 if queue.full():
@@ -286,6 +318,26 @@ async def ingest_external_ship(mmsi: int, fields: dict[str, Any]) -> None:
                     queue.put_nowait(update)
                 except asyncio.QueueFull:
                     pass
+
+        # Record incoming packet for real-time live monitor
+        global _total_packets_received
+        _total_packets_received += 1
+        pkt = {
+            "id": _total_packets_received,
+            "time": datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3],
+            "source": "digitraffic.fi",
+            "msg_type": "LocationUpdate" if fields.get("lat") is not None else "MetadataUpdate",
+            "mmsi": mmsi,
+            "name": fields.get("name") or existing.get("name", "Unknown"),
+            "lat": round(float(existing["lat"]), 4) if existing.get("lat") is not None else None,
+            "lng": round(float(existing["lng"]), 4) if existing.get("lng") is not None else None,
+            "speed": round(float(existing["speed"]), 1) if existing.get("speed") is not None else 0.0,
+            "heading": round(float(existing["heading"]), 0) if existing.get("heading") is not None else None,
+            "destination": existing.get("destination", ""),
+            "type": existing.get("type", "cargo"),
+            "raw_payload": fields,
+        }
+        _recent_incoming_packets.appendleft(pkt)
 
 
 async def _connect_loop() -> None:
@@ -339,6 +391,17 @@ async def _connect_loop() -> None:
 async def start() -> None:
     """Start the AIS stream background task (called on app startup)."""
     global _ws_task
+    try:
+        restored = await ais_db.load_ships_from_db()
+        if restored:
+            async with _lock:
+                for k, v in restored.items():
+                    if k not in _ships:
+                        _ships[k] = v
+            logger.info("Restored %d vessels from database into AIS cache", len(restored))
+    except Exception as e:
+        logger.warning("Could not restore AIS vessels from DB: %s", e)
+
     if _ws_task is None or _ws_task.done():
         _ws_task = asyncio.create_task(_connect_loop())
         logger.info("AIS stream background task started")
@@ -403,3 +466,19 @@ def unsubscribe_ships(queue: asyncio.Queue[dict[str, Any]]) -> None:
 def ship_count() -> int:
     """Number of currently tracked ships (lock-free, for stats)."""
     return len(_ships)
+
+
+def get_recent_packets(limit: int = 50) -> list[dict[str, Any]]:
+    """Return the most recently received raw AIS stream packets."""
+    return list(_recent_incoming_packets)[:limit]
+
+
+def get_stream_stats() -> dict[str, Any]:
+    """Return throughput and counter statistics for the incoming feed."""
+    uptime = max(time.time() - _start_time, 1)
+    return {
+        "total_packets": _total_packets_received,
+        "rate_per_sec": round(_total_packets_received / uptime, 1),
+        "vessels_in_cache": len(_ships),
+        "uptime_seconds": int(uptime),
+    }

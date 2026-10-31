@@ -3,6 +3,10 @@ LTmap — Maritime Router
 
 Serves live AIS ship positions (from the ais_stream service). Port and
 chokepoint overlays remain empty until a live geographic data source is added.
+
+WebSocket endpoints:
+  /api/maritime/ws      — Full AIS snapshot broadcast (replaces GET polling)
+  /api/maritime/stream  — Focused single-vessel tracking by MMSI
 """
 
 import asyncio
@@ -12,15 +16,186 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import Response
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ..services import ais_stream
+from ..services import ais_stream, ais_db
 
 logger = logging.getLogger("ltmap.maritime")
 
 router = APIRouter(prefix="/api/maritime", tags=["maritime"])
 
+# ── Broadcast interval for the full-snapshot WebSocket ──────────────────────────
+WS_BROADCAST_INTERVAL = 5.0  # seconds between pushes
+
+
+# ── Helper: apply type + bounds filtering ───────────────────────────────────────
+
+def _filter_ships(
+    ships: list[dict],
+    requested_types: set[str] | None = None,
+    single_type: str | None = None,
+    include_ships: bool = True,
+    bounds: dict | None = None,
+) -> list[dict]:
+    """Filter a ship list by type and optional bounding box."""
+    # ── type filter ──
+    if requested_types:
+        filtered = [
+            s for s in ships
+            if ("cargo" in requested_types and s.get("type") in ("cargo", "container"))
+            or ("tanker" in requested_types and s.get("type") == "tanker")
+            or ("military" in requested_types and s.get("type") == "military")
+        ]
+    elif single_type and single_type.lower() != "all":
+        req = single_type.lower()
+        if req in ("container", "cargo"):
+            filtered = [s for s in ships if s.get("type") in ("cargo", "container")]
+        else:
+            filtered = [s for s in ships if s.get("type") == req]
+    else:
+        filtered = ships if include_ships else []
+
+    # ── bounding-box filter ──
+    if bounds:
+        west, south, east, north = bounds["west"], bounds["south"], bounds["east"], bounds["north"]
+
+        def in_view(item: dict) -> bool:
+            try:
+                lat = float(item.get("lat"))
+                lng = float(item.get("lng"))
+            except (TypeError, ValueError):
+                return False
+            if abs(east - west) >= 360:
+                inside_lon = True
+            else:
+                west_norm = ((west + 180) % 360) - 180
+                east_norm = ((east + 180) % 360) - 180
+                inside_lon = (
+                    west_norm <= lng <= east_norm
+                    if west_norm <= east_norm
+                    else lng >= west_norm or lng <= east_norm
+                )
+            return south <= lat <= north and inside_lon
+
+        filtered = [s for s in filtered if in_view(s)]
+
+    return filtered
+
+
+def _category_counts(ships: list[dict]) -> dict:
+    return {
+        "cargo": sum(1 for s in ships if s.get("type") in ("cargo", "container")),
+        "tanker": sum(1 for s in ships if s.get("type") == "tanker"),
+        "military": sum(1 for s in ships if s.get("type") == "military"),
+    }
+
+
+# ── WebSocket: full AIS snapshot broadcast ──────────────────────────────────────
+
+@router.websocket("/ws")
+async def maritime_ws(websocket: WebSocket):
+    """
+    Full AIS data over WebSocket — replaces GET /api/maritime polling.
+
+    On connect: sends a complete snapshot immediately.
+    Then pushes updated snapshots every 5 seconds.
+
+    Clients can send JSON messages to adjust filters at any time:
+      {"types": ["cargo", "tanker", "military"]}   — ship-type filter
+      {"bounds": {"west": …, "south": …, "east": …, "north": …}}
+      {"include_ships": true, "include_ports": true}
+
+    Combine in one message:
+      {"types": ["cargo"], "bounds": {"west": -10, "south": 30, "east": 40, "north": 60}}
+
+    Send {} or {"types": []} to reset filters and get all ships.
+    """
+    await websocket.accept()
+    logger.info("Maritime WebSocket client connected")
+
+    # Mutable filter state — updated by incoming messages
+    filter_state: dict = {
+        "types": set(),
+        "bounds": None,
+        "include_ships": True,
+        "include_ports": True,
+    }
+
+    async def _incoming_listener():
+        """Listen for filter-change messages from the client."""
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    msg = json.loads(raw)
+                    if "types" in msg:
+                        raw_types = msg["types"]
+                        filter_state["types"] = (
+                            {t.strip().lower() for t in raw_types if t.strip()}
+                            if isinstance(raw_types, list) else set()
+                        )
+                    if "bounds" in msg:
+                        b = msg["bounds"]
+                        if isinstance(b, dict) and all(k in b for k in ("west", "south", "east", "north")):
+                            filter_state["bounds"] = {
+                                "west": float(b["west"]),
+                                "south": float(b["south"]),
+                                "east": float(b["east"]),
+                                "north": float(b["north"]),
+                            }
+                        else:
+                            filter_state["bounds"] = None
+                    if "include_ships" in msg:
+                        filter_state["include_ships"] = bool(msg["include_ships"])
+                    if "include_ports" in msg:
+                        filter_state["include_ports"] = bool(msg["include_ports"])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    listener_task = asyncio.create_task(_incoming_listener())
+
+    try:
+        while True:
+            # Build snapshot
+            snapshot = await _build_snapshot(include_ports=filter_state["include_ports"])
+
+            # Apply filters
+            filtered_ships = _filter_ships(
+                snapshot["ships"],
+                requested_types=filter_state["types"] or None,
+                include_ships=filter_state["include_ships"],
+                bounds=filter_state["bounds"],
+            )
+
+            include_ports = filter_state["include_ports"]
+            payload = {
+                "type": "maritime_snapshot",
+                "ships": filtered_ships,
+                "ports": snapshot["ports"] if include_ports else [],
+                "chokepoints": snapshot["chokepoints"] if include_ports else [],
+                "total_ships": len(filtered_ships),
+                "total_ports": len(snapshot["ports"]) if include_ports else 0,
+                "total_chokepoints": len(snapshot["chokepoints"]) if include_ports else 0,
+                "category_counts": _category_counts(filtered_ships),
+                "filter": sorted(filter_state["types"]) if filter_state["types"] else "all",
+                "timestamp": snapshot["timestamp"],
+            }
+
+            await websocket.send_text(json.dumps(payload))
+            await asyncio.sleep(WS_BROADCAST_INTERVAL)
+
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    except Exception as exc:
+        logger.warning("Maritime WebSocket error: %s", exc)
+    finally:
+        listener_task.cancel()
+        logger.info("Maritime WebSocket client disconnected")
+
+
+# ── WebSocket: focused single-vessel tracking ──────────────────────────────────
 
 @router.websocket("/stream")
 async def maritime_stream(websocket: WebSocket, mmsi: str | None = None):
@@ -87,15 +262,15 @@ def _distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return math.sqrt(dx * dx + dy * dy) * 111.32
 
 
-# ── Snapshot Cache ──────────────────────────────────────────────────────────────
-_snapshot_cache: dict[bool, dict] = {}
-_snapshot_time: dict[bool, float] = {}
-SNAPSHOT_TTL = 5.0  # seconds
+# ── Snapshot Builder ─────────────────────────────────────────────────────────────
 
 
 async def _build_snapshot(include_ports: bool = True) -> dict:
     """Build a complete maritime snapshot with dynamic port/chokepoint analysis."""
     ships = await ais_stream.get_ships()
+    if not ships:
+        db_ships = await ais_db.load_ships_from_db()
+        ships = list(db_ships.values())
     now = time.time()
 
     # No bundled port or chokepoint catalog; these arrays populate only from a future live source.
@@ -122,105 +297,4 @@ async def _build_snapshot(include_ports: bool = True) -> dict:
     }
 
 
-@router.get("")
-async def get_maritime_data(
-    type: str | None = None,
-    types: str | None = None,
-    include_ships: bool = True,
-    include_ports: bool = True,
-    west: float | None = Query(None, ge=-540, le=540),
-    south: float | None = Query(None, ge=-90, le=90),
-    east: float | None = Query(None, ge=-540, le=540),
-    north: float | None = Query(None, ge=-90, le=90),
-):
-    """Fetch live AIS maritime data: vessels, ports, and chokepoints.
-    Optionally filter ships by category: 'container' / 'cargo', 'tanker', 'military', 'all'.
-    """
-    global _snapshot_cache, _snapshot_time
 
-    # Return immediately when every maritime layer is off, without polling AIS.
-    if not include_ships and not include_ports:
-        return Response(
-            content=json.dumps({
-                "ports": [], "chokepoints": [], "ships": [],
-                "total_ports": 0, "total_chokepoints": 0, "total_ships": 0,
-                "category_counts": {"cargo": 0, "tanker": 0, "military": 0},
-                "timestamp": datetime.now(timezone.utc).isoformat(), "filter": "all",
-            }),
-            media_type="application/json",
-            headers={"Cache-Control": "no-store"},
-        )
-
-    now = time.time()
-    cache_key = bool(include_ports)
-    if cache_key in _snapshot_cache and now - _snapshot_time.get(cache_key, 0) < SNAPSHOT_TTL:
-        snapshot = _snapshot_cache[cache_key]
-    else:
-        snapshot = await _build_snapshot(include_ports=include_ports)
-        _snapshot_cache[cache_key] = snapshot
-        _snapshot_time[cache_key] = now
-
-    requested_types = {
-        value.strip().lower() for value in (types or "").split(",") if value.strip()
-    }
-    if requested_types:
-        filtered_ships = [
-            ship for ship in snapshot["ships"]
-            if ("cargo" in requested_types and ship.get("type") in ("cargo", "container"))
-            or ("tanker" in requested_types and ship.get("type") == "tanker")
-            or ("military" in requested_types and ship.get("type") == "military")
-        ]
-    elif type and type.lower() != "all":
-        req_type = type.lower()
-        if req_type in ("container", "cargo"):
-            filtered_ships = [s for s in snapshot["ships"] if s.get("type") in ("cargo", "container")]
-        else:
-            filtered_ships = [s for s in snapshot["ships"] if s.get("type") == req_type]
-    else:
-        filtered_ships = snapshot["ships"] if include_ships else []
-
-    response_data = {
-        **snapshot,
-        "ships": filtered_ships,
-        "ports": snapshot["ports"] if include_ports else [],
-        "chokepoints": snapshot["chokepoints"] if include_ports else [],
-        "total_ships": len(filtered_ships),
-        "total_ports": len(snapshot["ports"]) if include_ports else 0,
-        "total_chokepoints": len(snapshot["chokepoints"]) if include_ports else 0,
-        "filter": sorted(requested_types) if requested_types else (type or "all"),
-    }
-
-    if None not in (west, south, east, north):
-        def in_view(item: dict) -> bool:
-            try:
-                lat = float(item.get("lat"))
-                lng = float(item.get("lng"))
-            except (TypeError, ValueError):
-                return False
-            if abs(east - west) >= 360:
-                inside_lon = True
-            else:
-                west_norm = ((west + 180) % 360) - 180
-                east_norm = ((east + 180) % 360) - 180
-                inside_lon = west_norm <= lng <= east_norm if west_norm <= east_norm else lng >= west_norm or lng <= east_norm
-            return south <= lat <= north and inside_lon
-
-        response_data["ships"] = [s for s in response_data["ships"] if in_view(s)]
-        response_data["ports"] = [p for p in response_data["ports"] if in_view(p)]
-        response_data["chokepoints"] = [p for p in response_data["chokepoints"] if in_view(p)]
-        response_data["total_ships"] = len(response_data["ships"])
-        response_data["total_ports"] = len(response_data["ports"])
-        response_data["total_chokepoints"] = len(response_data["chokepoints"])
-    response_data["category_counts"] = {
-        "cargo": sum(1 for ship in response_data["ships"] if ship.get("type") in ("cargo", "container")),
-        "tanker": sum(1 for ship in response_data["ships"] if ship.get("type") == "tanker"),
-        "military": sum(1 for ship in response_data["ships"] if ship.get("type") == "military"),
-    }
-
-    body = json.dumps(response_data)
-
-    return Response(
-        content=body,
-        media_type="application/json",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
-    )

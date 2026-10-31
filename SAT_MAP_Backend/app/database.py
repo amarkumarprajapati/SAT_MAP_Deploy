@@ -4,10 +4,14 @@ import asyncio
 import json
 import logging
 import sqlite3
+import warnings
 from pathlib import Path
 from typing import Any
 
 import aiomysql
+
+# Suppress harmless MySQL "Table already exists" notices from CREATE TABLE IF NOT EXISTS
+warnings.filterwarnings("ignore", message=".*already exists.*")
 
 from .config import settings
 
@@ -133,8 +137,8 @@ async def save_snapshot(key: str, payload: Any) -> None:
                         await cursor.execute(
                             """
                             INSERT INTO api_snapshots (snapshot_key, payload)
-                            VALUES (%s, %s)
-                            ON DUPLICATE KEY UPDATE payload = VALUES(payload)
+                            VALUES (%s, %s) AS new_row
+                            ON DUPLICATE KEY UPDATE payload = new_row.payload
                             """,
                             (key, serialized),
                         )

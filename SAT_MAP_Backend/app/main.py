@@ -13,13 +13,15 @@ from starlette.middleware.cors import CORSMiddleware
 from .config import settings
 from . import database
 from .endpoints import Endpoints
-from .routers import satellites, flights, maritime, stats, region_dossier, providers, osint, geospatial_video
-from .services import ais_stream, digitraffic_ais, tle_cache
+from .routers import satellites, flights, maritime, stats, region_dossier, providers, osint, geospatial_video, dashboard
+from .services import ais_db, ais_stream, digitraffic_ais, tle_cache
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await database.connect()
+    await ais_db.init_tables()
+    await ais_db.start()
     await providers.open_client()
     await osint.open_client()
     await tle_cache.restore_database_cache()
@@ -38,6 +40,7 @@ async def lifespan(app: FastAPI):
                 pass
         await ais_stream.stop()
         await digitraffic_ais.stop()
+        await ais_db.stop()
         await providers.close_client()
         await osint.close_client()
         await database.close()
@@ -89,6 +92,7 @@ app.include_router(stats.router)
 app.include_router(providers.router)
 app.include_router(osint.router)
 app.include_router(geospatial_video.router)
+app.include_router(dashboard.router)
 
 app.add_middleware(
     PrivateNetworkCORSMiddleware,
