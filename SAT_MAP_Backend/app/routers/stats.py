@@ -14,7 +14,6 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from ..services import ais_stream, tle_cache
-from . import flights
 
 logger = logging.getLogger("ltmap.stats")
 
@@ -26,25 +25,14 @@ _snapshot_time: float = 0
 
 
 async def _compute_stats() -> dict[str, int]:
-    # 1. Flights count
-    flight_count = 0
-    try:
-        if flights._cached_data and time.time() - flights._last_fetch < 120:
-            flight_count = len(flights._cached_data.get("military_flights", []))
-        else:
-            # Quick check without blocking if not fetched yet
-            pass
-    except Exception:
-        pass
-
-    # 2. Satellites count
+    # 1. Satellites count
     sat_count = tle_cache.catalogue_size()
 
-    # 3. Maritime count (live AIS ships)
+    # 2. Maritime count (live AIS ships)
     maritime_count = ais_stream.ship_count()
 
     return {
-        "flights": flight_count,
+        "flights": 0,
         "sats": sat_count,
         "maritime": maritime_count,
     }

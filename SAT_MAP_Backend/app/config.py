@@ -15,8 +15,6 @@ class Settings(BaseModel):
     API_PREFIX: str = os.getenv("API_PREFIX", "/api")
     TIMEOUT_SECONDS: float = float(os.getenv("TIMEOUT_SECONDS", "30.0"))
     AIS_API_KEY: str = os.getenv("AIS_API_KEY", "")
-    OPENSKY_CLIENT_ID: str = os.getenv("OPENSKY_CLIENT_ID", "")
-    OPENSKY_CLIENT_SECRET: str = os.getenv("OPENSKY_CLIENT_SECRET", "")
     OSINT_SERVICE_URL: str = os.getenv("OSINT_SERVICE_URL", "http://127.0.0.1:15673").rstrip("/")
     CACHE_DIR: str = os.getenv("CACHE_DIR", str(Path(__file__).resolve().parent.parent / ".cache"))
     DATABASE_HOST: str = os.getenv("DATABASE_HOST", "")

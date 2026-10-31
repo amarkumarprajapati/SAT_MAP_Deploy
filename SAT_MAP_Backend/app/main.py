@@ -13,7 +13,7 @@ from starlette.middleware.cors import CORSMiddleware
 from .config import settings
 from . import database
 from .endpoints import Endpoints
-from .routers import satellites, flights, maritime, stats, region_dossier, providers, osint, geospatial_video, dashboard
+from .routers import satellites, maritime, stats, region_dossier, providers, osint, geospatial_video, dashboard
 from .services import ais_db, ais_stream, digitraffic_ais, tle_cache
 
 
@@ -85,7 +85,6 @@ async def health_check():
 
 
 app.include_router(satellites.router)
-app.include_router(flights.router)
 app.include_router(maritime.router)
 app.include_router(region_dossier.router)
 app.include_router(stats.router)

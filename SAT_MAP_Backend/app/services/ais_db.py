@@ -8,6 +8,7 @@ survive backend restarts.
 Tables created automatically:
   ais_vessels        — latest state per MMSI (upserted on every position update)
   ais_track_points   — historical breadcrumb trail (append-only, auto-pruned)
+  ais_filter_mmsi    — MMSI allow-list; only listed vessels are persisted to DB
 """
 
 import asyncio
@@ -126,6 +127,33 @@ CREATE TABLE IF NOT EXISTS ais_track_points (
 )
 """
 
+_CREATE_FILTER_TABLE = """
+CREATE TABLE IF NOT EXISTS ais_filter_mmsi (
+    mmsi    BIGINT      PRIMARY KEY,
+    alias   VARCHAR(255) DEFAULT NULL,
+    source  VARCHAR(30)  DEFAULT 'user',
+    added_at DOUBLE      NOT NULL,
+    active  TINYINT(1)   DEFAULT 1,
+    notes   TEXT         DEFAULT NULL
+) ENGINE=InnoDB CHARACTER SET utf8mb4
+"""
+
+_SQLITE_FILTER_TABLE = """
+CREATE TABLE IF NOT EXISTS ais_filter_mmsi (
+    mmsi    INTEGER PRIMARY KEY,
+    alias   TEXT,
+    source  TEXT DEFAULT 'user',
+    added_at REAL NOT NULL,
+    active  INTEGER DEFAULT 1,
+    notes   TEXT
+)
+"""
+
+
+# ── Filter state ────────────────────────────────────────────────────────────────
+_FILTER_MMSIS: set[int] = set()
+_FILTER_LOADED = False
+
 
 # ── Startup / Shutdown ──────────────────────────────────────────────────────────
 
@@ -140,6 +168,7 @@ async def init_tables() -> None:
                 async with conn.cursor() as cur:
                     await cur.execute(_CREATE_VESSELS_TABLE)
                     await cur.execute(_CREATE_TRACKS_TABLE)
+                    await cur.execute(_CREATE_FILTER_TABLE)
                 await conn.commit()
             logger.info("AIS MySQL database tables ready")
         except Exception:
@@ -148,6 +177,7 @@ async def init_tables() -> None:
         try:
             sqlite.execute(_SQLITE_VESSELS_TABLE)
             sqlite.execute(_SQLITE_TRACKS_TABLE)
+            sqlite.execute(_SQLITE_FILTER_TABLE)
             sqlite.commit()
             logger.info("AIS SQLite tables ready")
         except Exception:
@@ -186,6 +216,152 @@ async def stop() -> None:
     logger.info("AIS DB persistence stopped")
 
 
+# ── Filter MMSI allow-list ──────────────────────────────────────────────────────
+
+async def _ensure_filter_loaded() -> None:
+    """Load the active filter MMSIs from the database into memory (once)."""
+    global _FILTER_LOADED
+    if _FILTER_LOADED:
+        return
+    pool = database._pool
+    sqlite = database._sqlite
+    if pool is None and sqlite is None:
+        _FILTER_LOADED = True
+        return
+    try:
+        if pool is not None:
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT mmsi FROM ais_filter_mmsi WHERE active = 1")
+                    rows = await cur.fetchall()
+        elif sqlite is not None:
+            cur = sqlite.cursor()
+            cur.execute("SELECT mmsi FROM ais_filter_mmsi WHERE active = 1")
+            rows = cur.fetchall()
+        else:
+            rows = []
+        _FILTER_MMSIS.update(int(r[0]) for r in rows)
+    except Exception:
+        logger.exception("Failed to load AIS filter MMSIs")
+    _FILTER_LOADED = True
+
+
+async def mmsi_passes_filter(mmsi: int) -> bool:
+    """Return True if a vessel with this MMSI should be persisted to the DB."""
+    await _ensure_filter_loaded()
+    if not _FILTER_MMSIS:
+        return True  # no filter configured — keep everything (backward compatible)
+    return int(mmsi) in _FILTER_MMSIS
+
+
+async def get_filter_mmsis() -> list[int]:
+    """Return the currently active filter MMSIs, sorted."""
+    await _ensure_filter_loaded()
+    return sorted(_FILTER_MMSIS)
+
+
+async def add_filter_mmsi(
+    mmsi: int,
+    alias: str | None = None,
+    source: str = "user",
+    notes: str | None = None,
+) -> None:
+    """Add (or refresh) an MMSI in the filter allow-list and cache it."""
+    pool = database._pool
+    sqlite = database._sqlite
+    if pool is None and sqlite is None:
+        return
+    now = time.time()
+    try:
+        if pool is not None:
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        INSERT INTO ais_filter_mmsi (mmsi, alias, source, added_at, notes)
+                        VALUES (%s, %s, %s, %s, %s) AS new_row
+                        ON DUPLICATE KEY UPDATE
+                            alias = new_row.alias,
+                            source = new_row.source,
+                            notes = new_row.notes
+                        """,
+                        (int(mmsi), alias, source, now, notes),
+                    )
+                await conn.commit()
+        elif sqlite is not None:
+            cur = sqlite.cursor()
+            cur.execute(
+                """
+                INSERT INTO ais_filter_mmsi (mmsi, alias, source, added_at, notes)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(mmsi) DO UPDATE SET
+                    alias = excluded.alias,
+                    source = excluded.source,
+                    notes = excluded.notes
+                """,
+                (int(mmsi), alias, source, now, notes),
+            )
+            sqlite.commit()
+        _FILTER_MMSIS.add(int(mmsi))
+    except Exception:
+        logger.exception("Failed to add MMSI %s to AIS filter", mmsi)
+
+
+async def remove_filter_mmsi(mmsi: int) -> None:
+    """Remove an MMSI from the filter allow-list and cache."""
+    pool = database._pool
+    sqlite = database._sqlite
+    if pool is None and sqlite is None:
+        return
+    try:
+        if pool is not None:
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("DELETE FROM ais_filter_mmsi WHERE mmsi = %s", (int(mmsi),))
+                await conn.commit()
+        elif sqlite is not None:
+            cur = sqlite.cursor()
+            cur.execute("DELETE FROM ais_filter_mmsi WHERE mmsi = ?", (int(mmsi),))
+            sqlite.commit()
+        _FILTER_MMSIS.discard(int(mmsi))
+    except Exception:
+        logger.exception("Failed to remove MMSI %s from AIS filter", mmsi)
+
+
+async def set_filter_mmsis(mmsis: list[int]) -> None:
+    """Replace the entire filter allow-list with the given MMSIs."""
+    pool = database._pool
+    sqlite = database._sqlite
+    if pool is None and sqlite is None:
+        return
+    vals = sorted({int(m) for m in mmsis})
+    now = time.time()
+    try:
+        if pool is not None:
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("DELETE FROM ais_filter_mmsi")
+                    if vals:
+                        await cur.executemany(
+                            "INSERT INTO ais_filter_mmsi (mmsi, source, added_at) VALUES (%s, %s, %s)",
+                            [(m, "user", now) for m in vals],
+                        )
+                await conn.commit()
+        elif sqlite is not None:
+            cur = sqlite.cursor()
+            cur.execute("DELETE FROM ais_filter_mmsi")
+            if vals:
+                cur.executemany(
+                    "INSERT INTO ais_filter_mmsi (mmsi, source, added_at) VALUES (?, ?, ?)",
+                    [(m, "user", now) for m in vals],
+                )
+            sqlite.commit()
+        _FILTER_MMSIS.clear()
+        _FILTER_MMSIS.update(vals)
+    except Exception:
+        logger.exception("Failed to replace AIS filter MMSIs")
+
+
 # ── Public API: queue ship updates ──────────────────────────────────────────────
 
 async def queue_ship_update(mmsi: int, ship: dict[str, Any]) -> None:
@@ -220,6 +396,7 @@ async def load_ships_from_db() -> dict[int, dict[str, Any]]:
 
     ships: dict[int, dict[str, Any]] = {}
     cutoff = time.time() - 3600  # only vessels seen within the last 60 minutes
+    await _ensure_filter_loaded()
     query = (
         "SELECT mmsi, name, ship_type, lat, lng, speed, heading, destination, "
         "ais_type_code, length_m, width_m, draught, size_class, size_source, "
@@ -429,6 +606,24 @@ async def _flush_pending() -> None:
                             vessel_rows,
                         )
 
+                        # Automatically store unique MMSI in ais_filter_mmsi (Insert if not exists, update alias/time if exists)
+                        filter_rows = [
+                            (r[0], r[1] or "Auto-Ingested", "stream", r[17] if len(r) > 17 else time.time())
+                            for r in vessel_rows
+                        ]
+                        await cur.executemany(
+                            """
+                            INSERT INTO ais_filter_mmsi (mmsi, alias, source, added_at, active)
+                            VALUES (%s, %s, %s, %s, 1) AS new_filt
+                            ON DUPLICATE KEY UPDATE
+                                alias = COALESCE(new_filt.alias, ais_filter_mmsi.alias),
+                                active = 1
+                            """,
+                            filter_rows,
+                        )
+                        for fr in filter_rows:
+                            _FILTER_MMSIS.add(fr[0])
+
                     if tracks:
                         await cur.executemany(
                             "INSERT INTO ais_track_points (mmsi, lat, lng, speed, heading, recorded_at) "
@@ -470,6 +665,22 @@ async def _flush_pending() -> None:
                     """,
                     vessel_rows,
                 )
+                filter_rows = [
+                    (r[0], r[1] or "Auto-Ingested", "stream", r[17] if len(r) > 17 else time.time())
+                    for r in vessel_rows
+                ]
+                cur.executemany(
+                    """
+                    INSERT INTO ais_filter_mmsi (mmsi, alias, source, added_at, active)
+                    VALUES (?, ?, ?, ?, 1)
+                    ON CONFLICT(mmsi) DO UPDATE SET
+                        alias = COALESCE(excluded.alias, ais_filter_mmsi.alias),
+                        active = 1
+                    """,
+                    filter_rows,
+                )
+                for fr in filter_rows:
+                    _FILTER_MMSIS.add(fr[0])
             if tracks:
                 cur.executemany(
                     "INSERT INTO ais_track_points (mmsi, lat, lng, speed, heading, recorded_at) "
@@ -551,6 +762,10 @@ async def print_status() -> None:
                 await cur.execute("SELECT COUNT(*) FROM ais_track_points")
                 (track_count,) = await cur.fetchone()
                 await cur.execute(
+                    "SELECT COUNT(*) FROM ais_filter_mmsi WHERE active = 1"
+                )
+                (filter_count,) = await cur.fetchone()
+                await cur.execute(
                     "SELECT ship_type, COUNT(*) FROM ais_vessels GROUP BY ship_type"
                 )
                 type_counts = dict(await cur.fetchall())
@@ -563,6 +778,7 @@ async def print_status() -> None:
         print("\n=== AIS Database Status (MySQL) ===")
         print(f"Total Vessels in DB:      {vessel_count}")
         print(f"Total Track Points in DB: {track_count}")
+        print(f"Filtered MMSIs in DB:     {filter_count}")
         print(f"Category Breakdown:       {type_counts}")
         print("\nMost Recently Updated Vessels:")
         for r in recent:
@@ -575,9 +791,12 @@ async def print_status() -> None:
         vessel_count = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM ais_track_points")
         track_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM ais_filter_mmsi WHERE active = 1")
+        filter_count = cur.fetchone()[0]
         print(f"\n=== AIS Database Status (SQLite) ===")
         print(f"Total Vessels in DB:      {vessel_count}")
         print(f"Total Track Points in DB: {track_count}")
+        print(f"Filtered MMSIs in DB:     {filter_count}")
         print("===================================\n")
     else:
         print("[ERROR] Database connection failed. Check your DATABASE_* settings in .env")
