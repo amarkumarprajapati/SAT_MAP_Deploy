@@ -6,17 +6,17 @@ This document provides a comprehensive technical reference for all external/thir
 
 ## High-Level Summary Matrix
 
-| Data Domain | External Provider / Service | Protocol | Endpoint / URL | Auth / Key Required | Update Cadence / Cache |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Global Maritime AIS** | **AISStream** (`aisstream.io`) | WebSocket (WSS) | `wss://stream.aisstream.io/v0/stream` | `AIS_API_KEY` (Required) | Real-time push / in-memory buffer (20k vessels) |
-| **Regional Maritime AIS** | **Fintraffic Digitraffic** (`digitraffic.fi`) | MQTT over WSS (TLS) | `wss://meri.digitraffic.fi:443/mqtt` | None (Free open data) | Real-time push / merged with AISStream |
-| **Military Aviation & Jamming** | **adsb.fi** | HTTPS REST (GET) | `https://opendata.adsb.fi/api/v2/mil` | None (Public open data) | 90s server-side memory cache |
-| **Satellite TLE (Primary)** | **CelesTrak** (`celestrak.org`) | HTTPS REST (GET) | `https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle` | None | 1-hour memory TTL / 4-hour disk cache |
-| **Satellite TLE (Fallback)** | **SatNOGS DB** (`satnogs.org`) | HTTPS REST (GET) | `https://db.satnogs.org/api/tle/?format=json` | None | On-demand fallback when CelesTrak fails |
-| **Reverse Geocoding** | **Photon by Komoot** (OSM) | HTTPS REST (GET) | `https://photon.komoot.io/reverse` | None | 24-hour memory cache |
-| **Country QID Resolution** | **Wikipedia MediaWiki API** | HTTPS REST (GET) | `https://en.wikipedia.org/w/api.php` | None | 24-hour memory cache |
-| **Country Facts & Heads of State** | **Wikidata REST & Action APIs** | HTTPS REST (GET) | `https://www.wikidata.org/w/rest.php/wikibase/v1/...` | None | 24-hour memory cache |
-| **Country / City Synopses** | **Wikipedia REST API** | HTTPS REST (GET) | `https://en.wikipedia.org/api/rest_v1/page/summary/{title}` | None | 24-hour memory cache |
+| Data Domain                        | External Provider / Service                   | Protocol            | Endpoint / URL                                                         | Auth / Key Required      | Update Cadence / Cache                          |
+| :--------------------------------- | :-------------------------------------------- | :------------------ | :--------------------------------------------------------------------- | :----------------------- | :---------------------------------------------- |
+| **Global Maritime AIS**            | **AISStream** (`aisstream.io`)                | WebSocket (WSS)     | `wss://stream.aisstream.io/v0/stream`                                  | `AIS_API_KEY` (Required) | Real-time push / in-memory buffer (20k vessels) |
+| **Regional Maritime AIS**          | **Fintraffic Digitraffic** (`digitraffic.fi`) | MQTT over WSS (TLS) | `wss://meri.digitraffic.fi:443/mqtt`                                   | None (Free open data)    | Real-time push / merged with AISStream          |
+| **Military Aviation & Jamming**    | **adsb.fi**                                   | HTTPS REST (GET)    | `https://opendata.adsb.fi/api/v2/mil`                                  | None (Public open data)  | 90s server-side memory cache                    |
+| **Satellite TLE (Primary)**        | **CelesTrak** (`celestrak.org`)               | HTTPS REST (GET)    | `https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle` | None                     | 1-hour memory TTL / 4-hour disk cache           |
+| **Satellite TLE (Fallback)**       | **SatNOGS DB** (`satnogs.org`)                | HTTPS REST (GET)    | `https://db.satnogs.org/api/tle/?format=json`                          | None                     | On-demand fallback when CelesTrak fails         |
+| **Reverse Geocoding**              | **Photon by Komoot** (OSM)                    | HTTPS REST (GET)    | `https://photon.komoot.io/reverse`                                     | None                     | 24-hour memory cache                            |
+| **Country QID Resolution**         | **Wikipedia MediaWiki API**                   | HTTPS REST (GET)    | `https://en.wikipedia.org/w/api.php`                                   | None                     | 24-hour memory cache                            |
+| **Country Facts & Heads of State** | **Wikidata REST & Action APIs**               | HTTPS REST (GET)    | `https://www.wikidata.org/w/rest.php/wikibase/v1/...`                  | None                     | 24-hour memory cache                            |
+| **Country / City Synopses**        | **Wikipedia REST API**                        | HTTPS REST (GET)    | `https://en.wikipedia.org/api/rest_v1/page/summary/{title}`            | None                     | 24-hour memory cache                            |
 
 ---
 
@@ -25,6 +25,7 @@ This document provides a comprehensive technical reference for all external/thir
 The backend combines two real-time AIS (Automatic Identification System) feeds to monitor global cargo, tanker, and naval movements.
 
 ### 1.1 AISStream (`aisstream.io`) — Global Ocean Coverage
+
 - **Source Service:** AISStream Live Maritime Stream
 - **Transport / Protocol:** Persistent WebSocket (`wss://stream.aisstream.io/v0/stream`)
 - **Backend Service:** [`app/services/ais_stream.py`](app/services/ais_stream.py)
@@ -33,7 +34,12 @@ The backend combines two real-time AIS (Automatic Identification System) feeds t
   ```json
   {
     "APIKey": "<AIS_API_KEY>",
-    "BoundingBoxes": [[[-90.0, -180.0], [90.0, 180.0]]],
+    "BoundingBoxes": [
+      [
+        [-90.0, -180.0],
+        [90.0, 180.0]
+      ]
+    ],
     "FilterMessageTypes": ["PositionReport", "ShipStaticData"]
   }
   ```
@@ -57,16 +63,18 @@ The backend combines two real-time AIS (Automatic Identification System) feeds t
   - Auto-reconnecting background daemon with heartbeats (ping interval: 30s).
   - In-memory vessel hash table (`_ships`, up to 20,000 ships) with LRU eviction.
   - **Database Persistence:** Streamed vessels and breadcrumbs are continuously batched into MySQL (`ais_vessels` and `ais_track_points` tables) by `app/services/ais_db.py`. On startup, latest vessel state is restored into cache from the database.
-  - **Full WebSocket Feed:** `/api/maritime/ws` pushes real-time full maritime snapshots every 5 seconds (with optional client filtering by type or bounding box).
+  - **Full WebSocket Feed:** `/api/maritime` pushes real-time full maritime snapshots every 5 seconds (with optional client filtering by type or bounding box).
   - **Targeted Streaming:** Broadcasts updates over WebSocket (`/api/maritime/stream?mmsi={mmsi}`) so clients can stream specific single vessels they are actively inspecting.
 
 ### 1.2 USCG Vessel Information Verification Service (VIVS)
+
 - **Source Service:** U.S. Coast Guard NAVCEN VIVS (`https://www.navcen.uscg.gov/ais-vivs-home`)
 - **Access:** Manual web lookup by vessel identifiers; no public API is documented.
 - **Coverage:** AIS data received within the USCG Nationwide AIS area; not worldwide and may lag by up to two business days.
 - **Backend:** The platform uses dimensions from its AIS feeds when reported. USCG VIVS is a manual verification link and is not scraped or polled by the backend.
 
 ### 1.3 Fintraffic Digitraffic — Baltic & Northern Europe Supplement
+
 - **Source Service:** Fintraffic Marine API (Finnish Transport Infrastructure Agency)
 - **Transport / Protocol:** MQTT v3.1.1 over WebSockets with TLS (`wss://meri.digitraffic.fi:443/mqtt`)
 - **Backend Service:** [`app/services/digitraffic_ais.py`](app/services/digitraffic_ais.py)
@@ -81,6 +89,7 @@ The backend combines two real-time AIS (Automatic Identification System) feeds t
 ## 2. Aerial Reconnaissance & Military Flights
 
 ### adsb.fi OpenData API
+
 - **Source Service:** adsb.fi Community ADS-B Exchange
 - **Transport / Protocol:** HTTPS GET
 - **Backend Router:** [`app/routers/flights.py`](app/routers/flights.py)
@@ -117,6 +126,7 @@ The backend combines two real-time AIS (Automatic Identification System) feeds t
 ## 3. Satellite Tracking & Orbital Mechanics (TLE / SGP4)
 
 ### 3.1 CelesTrak (`celestrak.org`) — Primary TLE Source
+
 - **Source Service:** CelesTrak NORAD GP Elements
 - **Transport / Protocol:** HTTPS GET
 - **Backend Service:** [`app/services/tle_cache.py`](app/services/tle_cache.py)
@@ -142,11 +152,13 @@ The backend combines two real-time AIS (Automatic Identification System) feeds t
   - **Background Worker:** Warm background refresh initiated on application startup.
 
 ### 3.2 SatNOGS DB (`db.satnogs.org`) — Automated Fallback
+
 - **Source Service:** Libre Space Foundation SatNOGS Satellite Database
 - **Endpoint URL:** `https://db.satnogs.org/api/tle/?format=json`
 - **Fallback Trigger:** If CelesTrak returns $< 500$ orbital elements due to upstream outages or network blocks.
 
 ### 3.3 Internal Propagation Engine
+
 - **Backend Utility:** [`app/utils/orbit.py`](app/utils/orbit.py)
 - **Algorithms:** Mathematical SGP4 / SDP4 Keplerian orbital propagation
 - **Calculations Provided:**
@@ -162,6 +174,7 @@ The backend combines two real-time AIS (Automatic Identification System) feeds t
 When a user clicks or inspects any global coordinate, the backend aggregates data from three open-source knowledge bases into a unified dossier (`/api/region-dossier?lat={lat}&lng={lng}`).
 
 ### 4.1 Photon by Komoot (OpenStreetMap Geocoding)
+
 - **Source Service:** Photon Geocoding Engine
 - **Endpoint URL:** `https://photon.komoot.io/reverse?lat={lat}&lon={lon}&lang=en&radius=50`
 - **Data Extracted:**
@@ -172,10 +185,12 @@ When a user clicks or inspects any global coordinate, the backend aggregates dat
 - **Cache:** 24-hour memory cache keyed by coordinate rounded to 3 decimal places.
 
 ### 4.2 Wikipedia MediaWiki API (Entity ID Resolver)
+
 - **Endpoint URL:** `https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&ppprop=wikibase_item&redirects=1&format=json&titles={country_name}`
 - **Purpose:** Resolves the sovereign country title to its canonical Wikidata Q-identifier (e.g. `Q668` for India, `Q30` for USA).
 
 ### 4.3 Wikidata REST API & Action API (Country Intelligence)
+
 - **Endpoints:**
   - Statements: `https://www.wikidata.org/w/rest.php/wikibase/v1/entities/items/{qid}/statements`
   - Entity Labels: `https://www.wikidata.org/w/api.php?action=wbgetentities&props=labels&languages=en&format=json&ids={ids}`
@@ -193,6 +208,7 @@ When a user clicks or inspects any global coordinate, the backend aggregates dat
 - **Cache:** 24-hour memory cache per country.
 
 ### 4.4 Wikipedia REST API (Regional Synopsis)
+
 - **Endpoint URL:** `https://en.wikipedia.org/api/rest_v1/page/summary/{city_or_country}`
 - **Data Extracted:**
   - Article title

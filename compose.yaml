@@ -56,10 +56,10 @@ services:
     env_file:
       - ./.env
     environment:
-      APP_ENV: production
+      APP_ENV: development
       HOST: 0.0.0.0
       PORT: 8569
-      RELOAD: "false"
+      RELOAD: "true"
       DATABASE_HOST: mysql
       DATABASE_PORT: 3306
       DATABASE_NAME: ${MYSQL_DATABASE:-sat_map}
@@ -70,6 +70,8 @@ services:
       OSINT_SERVICE_URL: http://osint:3000
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:7890}
     volumes:
+      - ./SAT_MAP_Backend/app:/app/app
+      - ./SAT_MAP_Backend/run.py:/app/run.py
       - backend_cache:/app/.cache
       - backend_data:/app/data
     ports:
@@ -107,6 +109,8 @@ services:
       DATABASE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in the root .env file}
       DATABASE_REQUIRED: "true"
       AIS_API_KEY: ${AIS_API_KEY:-}
+    volumes:
+      - ./SAT_MAP_Backend/app:/app/app
     depends_on:
       mysql:
         condition: service_healthy

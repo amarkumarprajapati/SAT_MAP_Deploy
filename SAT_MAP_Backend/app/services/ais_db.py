@@ -254,6 +254,51 @@ async def mmsi_passes_filter(mmsi: int) -> bool:
     return int(mmsi) in _FILTER_MMSIS
 
 
+async def get_filter_mmsi_records() -> list[dict]:
+    """Return all rows from ais_filter_mmsi formatted as dictionaries."""
+    pool = database._pool
+    sqlite = database._sqlite
+    records: list[dict] = []
+
+    if pool is not None:
+        try:
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "SELECT mmsi, alias, source, added_at, active, notes FROM ais_filter_mmsi ORDER BY added_at DESC"
+                    )
+                    rows = await cur.fetchall()
+                    for r in rows:
+                        records.append({
+                            "mmsi": r[0],
+                            "alias": r[1] or "",
+                            "source": r[2] or "user",
+                            "added_at": r[3],
+                            "active": bool(r[4]),
+                            "notes": r[5] or "",
+                        })
+        except Exception as e:
+            logger.warning("Error reading MySQL filter records: %s", e)
+    elif sqlite is not None:
+        try:
+            cur = sqlite.cursor()
+            cur.execute("SELECT mmsi, alias, source, added_at, active, notes FROM ais_filter_mmsi ORDER BY added_at DESC")
+            rows = cur.fetchall()
+            for r in rows:
+                records.append({
+                    "mmsi": r[0],
+                    "alias": r[1] or "",
+                    "source": r[2] or "user",
+                    "added_at": r[3],
+                    "active": bool(r[4]),
+                    "notes": r[5] or "",
+                })
+        except Exception as e:
+            logger.warning("Error reading SQLite filter records: %s", e)
+
+    return records
+
+
 async def get_filter_mmsis() -> list[int]:
     """Return the currently active filter MMSIs, sorted."""
     await _ensure_filter_loaded()

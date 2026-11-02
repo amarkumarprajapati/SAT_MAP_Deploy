@@ -385,7 +385,9 @@ export default function Dashboard() {
   const [maritimeShips, setMaritimeShips] = useState<any[]>([]);
   // Unbounded AIS snapshot used only for the selected satellite's horizon count.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [satelliteMaritimeShips, setSatelliteMaritimeShips] = useState<any[] | null>(null);
+  const [satelliteMaritimeShips, setSatelliteMaritimeShips] = useState<
+    any[] | null
+  >(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [maritimePorts, setMaritimePorts] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -456,6 +458,7 @@ export default function Dashboard() {
     unknown
   > | null>(null);
   const maritimeWsRef = useRef<WebSocket | null>(null);
+  const maritimeStreamWsRef = useRef<WebSocket | null>(null);
   const trackedShipMmsiRef = useRef(trackedShipMmsi);
   useEffect(() => {
     trackedShipMmsiRef.current = trackedShipMmsi;
@@ -949,63 +952,38 @@ export default function Dashboard() {
     mapCenter,
   ]);
 
-  // Specific fetcher for maritime data — non-urgent (startTransition)
-  const maritimeRequestRef = useRef<AbortController | null>(null);
-  const fetchMaritime = useCallback(async (): Promise<boolean> => {
-    if (typeof document !== "undefined" && document.hidden) return false;
+  // Maritime filters & WebSocket synchronization
+  const sendMaritimeWsFilters = useCallback(() => {
+    const ws = maritimeWsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const types = [
       activeLayers.ship_cargo ? "cargo" : null,
       activeLayers.ship_tanker ? "tanker" : null,
       activeLayers.ship_military ? "military" : null,
     ].filter((value): value is string => Boolean(value));
     const includePorts = Boolean(activeLayers.maritime);
-    if (!includePorts && types.length === 0) {
-      maritimeRequestRef.current?.abort();
-      maritimeRequestRef.current = null;
-      setMaritimeShips([]);
-      setMaritimePorts([]);
-      setMaritimeChokepoints([]);
-      setCategoryCounts({ cargo: 0, tanker: 0, military: 0 });
-      setTotalShips(0);
-      return true;
+    const includeShips = types.length > 0;
+
+    const payload: Record<string, unknown> = {
+      types,
+      include_ports: includePorts,
+      include_ships: includeShips,
+    };
+    if (mapCenter?.lat !== undefined && mapCenter?.lng !== undefined) {
+      payload.center = {
+        lat: mapCenter.lat,
+        lng: mapCenter.lng,
+      };
     }
-    maritimeRequestRef.current?.abort();
-    const controller = new AbortController();
-    maritimeRequestRef.current = controller;
-    try {
-      const res = await apiClient.get(
-        api.maritime(types, mapCenter?.bounds, includePorts),
-        { signal: controller.signal },
-      );
-      if (controller.signal.aborted) return false;
-      if (res.status === 200 && res.data) {
-        startTransition(() => {
-          if (Array.isArray(res.data.ports)) setMaritimePorts(res.data.ports);
-          if (Array.isArray(res.data.chokepoints))
-            setMaritimeChokepoints(res.data.chokepoints);
-          if (Array.isArray(res.data.ships)) setMaritimeShips(res.data.ships);
-          if (res.data.category_counts !== undefined)
-            setCategoryCounts(res.data.category_counts);
-          if (res.data.total_ships !== undefined)
-            setTotalShips(res.data.total_ships);
-        });
-        setBackendStatus("connected");
-        setBackendError("");
-        return true;
-      }
-      return false;
-    } catch (e) {
-      if (controller.signal.aborted) return false;
-      console.warn(
-        "[L&T] Maritime fetch error:",
-        e instanceof Error ? e.message : e,
-      );
-      setBackendStatus("error");
-      setBackendError(
-        e instanceof Error ? e.message : "Maritime data request failed",
-      );
-      return false;
+    if (mapCenter?.bounds) {
+      payload.bounds = {
+        west: mapCenter.bounds.west,
+        south: mapCenter.bounds.south,
+        east: mapCenter.bounds.east,
+        north: mapCenter.bounds.north,
+      };
     }
+    ws.send(JSON.stringify(payload));
   }, [
     activeLayers.maritime,
     activeLayers.ship_cargo,
@@ -1013,6 +991,11 @@ export default function Dashboard() {
     activeLayers.ship_military,
     mapCenter,
   ]);
+
+  const fetchMaritime = useCallback(async (): Promise<boolean> => {
+    sendMaritimeWsFilters();
+    return true;
+  }, [sendMaritimeWsFilters]);
 
   const activeShipFilter = useMemo<
     "all" | "cargo" | "tanker" | "military"
@@ -1104,7 +1087,11 @@ export default function Dashboard() {
       return;
     }
     const timer = window.setTimeout(() => {
-      if (activeLayers.sat_military || activeLayers.sat_navigation || activeLayers.sat_earth) {
+      if (
+        activeLayers.sat_military ||
+        activeLayers.sat_navigation ||
+        activeLayers.sat_earth
+      ) {
         void fetchersRef.current.fetchSatellites();
       }
       void fetchersRef.current.fetchMaritime();
@@ -1151,26 +1138,7 @@ export default function Dashboard() {
         ),
       ); // 5m
     }
-    {
-      let vesselTimer: ReturnType<typeof setTimeout>;
-      let stopped = false;
-      const vesselGapMs = 30_000;
-      const pollMaritime = () => {
-        if (stopped) return;
-        const maritimeActive =
-          activeLayers.maritime ||
-          activeLayers.ship_cargo ||
-          activeLayers.ship_tanker ||
-          activeLayers.ship_military;
-        if (maritimeActive) void fetchMaritime();
-        vesselTimer = setTimeout(pollMaritime, vesselGapMs);
-      };
-      vesselTimer = setTimeout(pollMaritime, vesselGapMs);
-      stopFns.push(() => {
-        stopped = true;
-        clearTimeout(vesselTimer);
-      });
-    }
+
     if ((activeLayers as Record<string, boolean>).cyber_attacks) {
       intervals.push(
         setInterval(() => {
@@ -1187,6 +1155,72 @@ export default function Dashboard() {
       stopFns.forEach((stop) => stop());
     };
   }, [activeLayers, fetchFlights, fetchExtra, fetchMaritime]);
+
+  // ── Maritime WebSocket Connection (/api/maritime) ──
+  useEffect(() => {
+    if (!mapReady || typeof window === "undefined") return;
+    let stopped = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      if (stopped) return;
+      const apiBase = process.env.NEXT_PUBLIC_FASTAPI_URL;
+      const wsUrl = apiBase
+        ? new URL("/api/maritime", apiBase)
+        : new URL(
+            "/api/maritime",
+            `${window.location.protocol}//${window.location.hostname}:8569`,
+          );
+      wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
+
+      const socket = new WebSocket(wsUrl.toString());
+      maritimeWsRef.current = socket;
+
+      socket.onopen = () => {
+        sendMaritimeWsFilters();
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const res = JSON.parse(event.data);
+          if (res.type === "maritime_snapshot") {
+            startTransition(() => {
+              if (Array.isArray(res.ports)) setMaritimePorts(res.ports);
+              if (Array.isArray(res.chokepoints))
+                setMaritimeChokepoints(res.chokepoints);
+              if (Array.isArray(res.ships)) setMaritimeShips(res.ships);
+              if (res.category_counts !== undefined)
+                setCategoryCounts(res.category_counts);
+              if (res.total_ships !== undefined) setTotalShips(res.total_ships);
+            });
+            setBackendStatus("connected");
+            setBackendError("");
+          }
+        } catch {
+          // ignore malformed frame
+        }
+      };
+
+      socket.onclose = () => {
+        maritimeWsRef.current = null;
+        if (!stopped) reconnectTimer = setTimeout(connect, 3000);
+      };
+      socket.onerror = () => socket.close();
+    };
+
+    connect();
+    return () => {
+      stopped = true;
+      maritimeWsRef.current?.close();
+      maritimeWsRef.current = null;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, [mapReady, sendMaritimeWsFilters]);
+
+  // Keep WebSocket filters up-to-date as viewport / active layer filters change
+  useEffect(() => {
+    sendMaritimeWsFilters();
+  }, [sendMaritimeWsFilters]);
 
   // ── Focused WebSocket Tracking (only streams the vessel you clicked / tracked) ──
   useEffect(() => {
@@ -1205,7 +1239,7 @@ export default function Dashboard() {
           );
       stream.protocol = stream.protocol === "https:" ? "wss:" : "ws:";
       const socket = new WebSocket(stream.toString());
-      maritimeWsRef.current = socket;
+      maritimeStreamWsRef.current = socket;
 
       socket.onopen = () => {
         if (trackedShipMmsiRef.current) {
@@ -1248,7 +1282,7 @@ export default function Dashboard() {
       };
 
       socket.onclose = () => {
-        maritimeWsRef.current = null;
+        maritimeStreamWsRef.current = null;
         if (!stopped) reconnectTimer = setTimeout(connect, 3000);
       };
       socket.onerror = () => socket.close();
@@ -1257,15 +1291,15 @@ export default function Dashboard() {
     connect();
     return () => {
       stopped = true;
-      maritimeWsRef.current?.close();
-      maritimeWsRef.current = null;
+      maritimeStreamWsRef.current?.close();
+      maritimeStreamWsRef.current = null;
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [mapReady]);
 
   // Synchronize tracking target with WebSocket server
   useEffect(() => {
-    const ws = maritimeWsRef.current;
+    const ws = maritimeStreamWsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     if (trackedShipMmsi) {
       ws.send(JSON.stringify({ action: "track", mmsi: trackedShipMmsi }));
@@ -1375,7 +1409,10 @@ export default function Dashboard() {
           onCountryClick={setSelectedCountryTime}
           onSatelliteSelect={(sat) => {
             setSelectedSatellite(sat);
-            if (sat?.noradId && satelliteShipsRequestRef.current !== sat.noradId) {
+            if (
+              sat?.noradId &&
+              satelliteShipsRequestRef.current !== sat.noradId
+            ) {
               satelliteShipsRequestRef.current = sat.noradId;
               setSatelliteMaritimeShips(null);
               void apiClient
@@ -1461,7 +1498,13 @@ export default function Dashboard() {
         isAreaDrawerOpen={areaDrawerOpen}
         onOpenShipHeatmap={() => {
           setAreaDrawerOpen(true);
-          setActiveLayers((prev) => ({ ...prev, ship_heatmap: true, ship_cargo: true, ship_tanker: true, ship_military: true }));
+          setActiveLayers((prev) => ({
+            ...prev,
+            ship_heatmap: true,
+            ship_cargo: true,
+            ship_tanker: true,
+            ship_military: true,
+          }));
           if (!analysisArea) setAreaDrawMode(true);
         }}
         onToggleAreaDrawer={() => {
@@ -1476,10 +1519,14 @@ export default function Dashboard() {
           <div className="mb-3 flex items-center justify-between">
             <div>
               <div className="font-mono text-xs font-bold tracking-[.18em] text-cyan-200">
-                {activeLayers.ship_heatmap ? "VESSEL ACTIVITY HEAT MAP" : "SATELLITE ACCESS"}
+                {activeLayers.ship_heatmap
+                  ? "VESSEL ACTIVITY HEAT MAP"
+                  : "SATELLITE ACCESS"}
               </div>
               <div className="mt-1 text-[10px] text-zinc-400">
-                {activeLayers.ship_heatmap ? "Draw an area to estimate stale AIS vessel locations" : "Draw a map area, then forecast orbital passes"}
+                {activeLayers.ship_heatmap
+                  ? "Draw an area to estimate stale AIS vessel locations"
+                  : "Draw a map area, then forecast orbital passes"}
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -1520,10 +1567,32 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-          <button type="button" onClick={() => setActiveLayers((prev) => ({ ...prev, ship_heatmap: !prev.ship_heatmap, ...(prev.ship_heatmap ? {} : { ship_cargo: true, ship_tanker: true, ship_military: true }) }))} className={`mt-2 flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-bold ${activeLayers.ship_heatmap ? "border-amber-300/50 bg-amber-300/15 text-amber-100" : "border-white/10 bg-black/20 text-zinc-400 hover:text-white"}`}>
-            {activeLayers.ship_heatmap ? "Vessel heat map enabled" : "Enable vessel heat map"}
+          <button
+            type="button"
+            onClick={() =>
+              setActiveLayers((prev) => ({
+                ...prev,
+                ship_heatmap: !prev.ship_heatmap,
+                ...(prev.ship_heatmap
+                  ? {}
+                  : {
+                      ship_cargo: true,
+                      ship_tanker: true,
+                      ship_military: true,
+                    }),
+              }))
+            }
+            className={`mt-2 flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-bold ${activeLayers.ship_heatmap ? "border-amber-300/50 bg-amber-300/15 text-amber-100" : "border-white/10 bg-black/20 text-zinc-400 hover:text-white"}`}
+          >
+            {activeLayers.ship_heatmap
+              ? "Vessel heat map enabled"
+              : "Enable vessel heat map"}
           </button>
-          {activeLayers.ship_heatmap && !analysisArea && <p className="mt-2 text-[10px] text-amber-200">Select an area to display estimated vessel positions there.</p>}
+          {activeLayers.ship_heatmap && !analysisArea && (
+            <p className="mt-2 text-[10px] text-amber-200">
+              Select an area to display estimated vessel positions there.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-1.5">
             {(
               [
@@ -1947,7 +2016,6 @@ export default function Dashboard() {
             className="hidden md:flex items-center gap-0.5 border-l border-white/15 pl-1.5"
             aria-label="Map tools"
           >
-           
             <button
               type="button"
               title={
@@ -2232,9 +2300,7 @@ export default function Dashboard() {
         />
       )}
 
-      <div
-        className="hidden"
-      >
+      <div className="hidden">
         <div
           className="pointer-events-auto flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#070b14]/90 border border-cyan-500/25  backdrop-blur-2xl text-[10px] sm:text-[11px] font-mono text-zinc-300 tracking-wider select-none"
           title="System shortcuts · Click keys or press on keyboard"

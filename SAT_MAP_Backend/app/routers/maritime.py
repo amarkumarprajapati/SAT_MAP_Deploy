@@ -5,8 +5,9 @@ Serves live AIS ship positions (from the ais_stream service). Port and
 chokepoint overlays remain empty until a live geographic data source is added.
 
 WebSocket endpoints:
-  /api/maritime/ws      — Full AIS snapshot broadcast (replaces GET polling)
-  /api/maritime/stream  — Focused single-vessel tracking by MMSI
+  /api/maritime             — Full AIS snapshot broadcast (replaces GET polling)
+  /api/maritime/stream         — Focused single-vessel tracking by MMSI
+  /api/maritime/filter-mmsi — Live stream/updates of ais_filter_mmsi records
 """
 
 import asyncio
@@ -36,8 +37,13 @@ def _filter_ships(
     single_type: str | None = None,
     include_ships: bool = True,
     bounds: dict | None = None,
+    center: dict | None = None,
+    max_ships: int = 2500,
 ) -> list[dict]:
-    """Filter a ship list by type and optional bounding box."""
+    """Filter a ship list by type and optional bounding box, prioritizing ships closest to the viewport center."""
+    if not include_ships:
+        return []
+
     # ── type filter ──
     if requested_types:
         filtered = [
@@ -53,7 +59,7 @@ def _filter_ships(
         else:
             filtered = [s for s in ships if s.get("type") == req]
     else:
-        filtered = ships if include_ships else []
+        filtered = ships
 
     # ── bounding-box filter ──
     if bounds:
@@ -79,6 +85,30 @@ def _filter_ships(
 
         filtered = [s for s in filtered if in_view(s)]
 
+    # Prioritize ships closest to the map center so the vessels on the user's screen are sent first
+    if center and "lat" in center and "lng" in center:
+        try:
+            c_lat = float(center["lat"])
+            c_lng = float(center["lng"])
+
+            def dist_sq(s: dict) -> float:
+                try:
+                    dlat = float(s.get("lat")) - c_lat
+                    dlng = float(s.get("lng")) - c_lng
+                    # Normalize longitude delta across 180 meridian
+                    dlng = ((dlng + 180) % 360) - 180
+                    return dlat * dlat + dlng * dlng
+                except Exception:
+                    return 999999.0
+
+            filtered.sort(key=dist_sq)
+        except Exception:
+            pass
+
+    # Cap ships returned to prevent browser freezes
+    if len(filtered) > max_ships:
+        filtered = filtered[:max_ships]
+
     return filtered
 
 
@@ -92,10 +122,17 @@ def _category_counts(ships: list[dict]) -> dict:
 
 # ── WebSocket: full AIS snapshot broadcast ──────────────────────────────────────
 
+@router.websocket("")
+@router.websocket("/")
 @router.websocket("/ws")
 async def maritime_ws(websocket: WebSocket):
     """
     Full AIS data over WebSocket — replaces GET /api/maritime polling.
+
+    Endpoints supported:
+      - /api/maritime
+      - /api/maritime/
+      - /api/maritime/ws (legacy)
 
     On connect: sends a complete snapshot immediately.
     Then pushes updated snapshots every 5 seconds.
@@ -117,9 +154,12 @@ async def maritime_ws(websocket: WebSocket):
     filter_state: dict = {
         "types": set(),
         "bounds": None,
+        "center": None,
         "include_ships": True,
         "include_ports": True,
     }
+
+    filter_changed_event = asyncio.Event()
 
     async def _incoming_listener():
         """Listen for filter-change messages from the client."""
@@ -128,27 +168,46 @@ async def maritime_ws(websocket: WebSocket):
                 raw = await websocket.receive_text()
                 try:
                     msg = json.loads(raw)
+                    changed = False
                     if "types" in msg:
                         raw_types = msg["types"]
-                        filter_state["types"] = (
+                        new_types = (
                             {t.strip().lower() for t in raw_types if t.strip()}
                             if isinstance(raw_types, list) else set()
                         )
+                        if new_types != filter_state["types"]:
+                            filter_state["types"] = new_types
+                            changed = True
+                    if "center" in msg:
+                        c = msg["center"]
+                        if isinstance(c, dict) and "lat" in c and "lng" in c:
+                            filter_state["center"] = {"lat": float(c["lat"]), "lng": float(c["lng"])}
                     if "bounds" in msg:
                         b = msg["bounds"]
                         if isinstance(b, dict) and all(k in b for k in ("west", "south", "east", "north")):
-                            filter_state["bounds"] = {
+                            new_b = {
                                 "west": float(b["west"]),
                                 "south": float(b["south"]),
                                 "east": float(b["east"]),
                                 "north": float(b["north"]),
                             }
                         else:
-                            filter_state["bounds"] = None
+                            new_b = None
+                        if new_b != filter_state["bounds"]:
+                            filter_state["bounds"] = new_b
+                            changed = True
                     if "include_ships" in msg:
-                        filter_state["include_ships"] = bool(msg["include_ships"])
+                        inc_s = bool(msg["include_ships"])
+                        if inc_s != filter_state["include_ships"]:
+                            filter_state["include_ships"] = inc_s
+                            changed = True
                     if "include_ports" in msg:
-                        filter_state["include_ports"] = bool(msg["include_ports"])
+                        inc_p = bool(msg["include_ports"])
+                        if inc_p != filter_state["include_ports"]:
+                            filter_state["include_ports"] = inc_p
+                            changed = True
+                    if changed:
+                        filter_changed_event.set()
                 except Exception:
                     pass
         except Exception:
@@ -161,12 +220,13 @@ async def maritime_ws(websocket: WebSocket):
             # Build snapshot
             snapshot = await _build_snapshot(include_ports=filter_state["include_ports"])
 
-            # Apply filters
+            # Apply viewport and type filters
             filtered_ships = _filter_ships(
                 snapshot["ships"],
                 requested_types=filter_state["types"] or None,
                 include_ships=filter_state["include_ships"],
                 bounds=filter_state["bounds"],
+                center=filter_state["center"],
             )
 
             include_ports = filter_state["include_ports"]
@@ -184,7 +244,13 @@ async def maritime_ws(websocket: WebSocket):
             }
 
             await websocket.send_text(json.dumps(payload))
-            await asyncio.sleep(WS_BROADCAST_INTERVAL)
+
+            # Sleep until interval or wake up immediately if client sends new viewport/filters
+            filter_changed_event.clear()
+            try:
+                await asyncio.wait_for(filter_changed_event.wait(), timeout=WS_BROADCAST_INTERVAL)
+            except asyncio.TimeoutError:
+                pass
 
     except (WebSocketDisconnect, RuntimeError):
         pass
@@ -199,11 +265,7 @@ async def maritime_ws(websocket: WebSocket):
 
 @router.websocket("/stream")
 async def maritime_stream(websocket: WebSocket, mmsi: str | None = None):
-    """
-    Focused AIS stream.
-    Supports on-demand vessel tracking so client is not overloaded with 20,000 ships.
-    Clients can send {"action": "track", "mmsi": ...} or {"action": "untrack"}.
-    """
+    
     await websocket.accept()
     queue = ais_stream.subscribe_ships()
     tracked_mmsi: str | None = str(mmsi) if mmsi else None
@@ -251,6 +313,61 @@ async def maritime_stream(websocket: WebSocket, mmsi: str | None = None):
     finally:
         listener_task.cancel()
         ais_stream.unsubscribe_ships(queue)
+
+
+# ── WebSocket: ais_filter_mmsi stream ──────────────────────────────────────────
+
+@router.websocket("/filter-mmsi")
+@router.websocket("/ws/filter-mmsi")
+async def maritime_filter_mmsi_ws(websocket: WebSocket, interval: float = 3.0):
+    """
+    WebSocket endpoint streaming the ais_filter_mmsi allow-list and records.
+    Sends full records immediately on connection, and continuously pushes updates
+    periodically or whenever records change. Clients can also send {"action": "refresh"}
+    to trigger an immediate snapshot.
+    """
+    await websocket.accept()
+    logger.info("Maritime filter MMSI WebSocket client connected")
+
+    async def _incoming():
+        try:
+            while True:
+                data = await websocket.receive_text()
+                try:
+                    msg = json.loads(data)
+                    if msg.get("action") == "refresh":
+                        recs = await ais_db.get_filter_mmsi_records()
+                        await websocket.send_json({
+                            "type": "filter_mmsi_snapshot",
+                            "total": len(recs),
+                            "records": recs,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    listener_task = asyncio.create_task(_incoming())
+
+    try:
+        while True:
+            records = await ais_db.get_filter_mmsi_records()
+            payload = {
+                "type": "filter_mmsi_update",
+                "total": len(records),
+                "records": records,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            await websocket.send_json(payload)
+            await asyncio.sleep(max(1.0, interval))
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    except Exception as exc:
+        logger.warning("Maritime filter MMSI WebSocket error: %s", exc)
+    finally:
+        listener_task.cancel()
+        logger.info("Maritime filter MMSI WebSocket client disconnected")
 
 
 # ── Static Data ─────────────────────────────────────────────────────────────────

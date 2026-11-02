@@ -600,46 +600,7 @@ async def clear_database_tables():
 @router.get("/api/admin/filter/mmsis")
 async def get_filter_mmsis():
     """Return the active MMSI allow-list and full filter records from ais_filter_mmsi."""
-    pool = database._pool
-    sqlite = database._sqlite
-    records = []
-    
-    if pool is not None:
-        try:
-            async with pool.acquire() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        "SELECT mmsi, alias, source, added_at, active, notes FROM ais_filter_mmsi ORDER BY added_at DESC"
-                    )
-                    rows = await cur.fetchall()
-                    for r in rows:
-                        records.append({
-                            "mmsi": r[0],
-                            "alias": r[1] or "",
-                            "source": r[2] or "user",
-                            "added_at": r[3],
-                            "active": bool(r[4]),
-                            "notes": r[5] or "",
-                        })
-        except Exception as e:
-            logger.warning("Error reading MySQL filter records: %s", e)
-    elif sqlite is not None:
-        try:
-            cur = sqlite.cursor()
-            cur.execute("SELECT mmsi, alias, source, added_at, active, notes FROM ais_filter_mmsi ORDER BY added_at DESC")
-            rows = cur.fetchall()
-            for r in rows:
-                records.append({
-                    "mmsi": r[0],
-                    "alias": r[1] or "",
-                    "source": r[2] or "user",
-                    "added_at": r[3],
-                    "active": bool(r[4]),
-                    "notes": r[5] or "",
-                })
-        except Exception as e:
-            logger.warning("Error reading SQLite filter records: %s", e)
-
+    records = await ais_db.get_filter_mmsi_records()
     mmsis = [r["mmsi"] for r in records if r["active"]] if records else await ais_db.get_filter_mmsis()
     return {"mmsis": mmsis, "records": records}
 

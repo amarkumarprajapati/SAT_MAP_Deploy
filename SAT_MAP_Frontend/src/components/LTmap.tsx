@@ -2816,7 +2816,7 @@ function LTmap({
         }
         features[i] = {
           type: "Feature",
-          geometry: { type: "Point", coordinates: [s.lng, s.lat] },
+          geometry: { type: "Point", coordinates: [Number(s.lng), Number(s.lat)] },
           properties: {
             name: s.name || (s.mmsi ? s.mmsi.toString() : ""),
             type: s.type || "cargo",

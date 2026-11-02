@@ -8,7 +8,7 @@ class Endpoints:
     ROOT = "/"
     HEALTH = "/health"
     API_HEALTH = f"{API_PREFIX}/health"
-    MARITIME_WS = f"{API_PREFIX}/maritime/ws"
+    MARITIME_WS = f"{API_PREFIX}/maritime"
     MARITIME_STREAM = f"{API_PREFIX}/maritime/stream"
     SATELLITES = f"{API_PREFIX}/satellites"
     SATELLITES_ORBIT = f"{API_PREFIX}/satellites/orbit"
