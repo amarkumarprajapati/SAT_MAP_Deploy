@@ -31,10 +31,12 @@ BATCH_FLUSH_INTERVAL = 2.0      # seconds between DB writes (batched)
 TRACK_RETENTION_HOURS = 24      # auto-prune track points older than this
 TRACK_PRUNE_INTERVAL = 600      # seconds between prune runs (10 min)
 MAX_BATCH_SIZE = 500            # max vessels per batch upsert
+TRACK_POINT_MIN_INTERVAL = 5.0   # persist at most one breadcrumb per vessel per 5s
 
 # ── Internal state ──────────────────────────────────────────────────────────────
 _pending: dict[int, dict[str, Any]] = {}   # mmsi → ship dict awaiting flush
 _pending_tracks: list[tuple] = []          # (mmsi, lat, lng, speed, heading, timestamp) rows
+_last_track_queued_at: dict[int, float] = {}
 _lock = asyncio.Lock()
 _flush_task: asyncio.Task | None = None
 _prune_task: asyncio.Task | None = None
@@ -152,6 +154,7 @@ CREATE TABLE IF NOT EXISTS ais_filter_mmsi (
 
 # ── Filter state ────────────────────────────────────────────────────────────────
 _FILTER_MMSIS: set[int] = set()
+_KNOWN_FILTER_MMSIS: set[int] = set()
 _FILTER_LOADED = False
 
 
@@ -232,15 +235,16 @@ async def _ensure_filter_loaded() -> None:
         if pool is not None:
             async with pool.acquire() as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute("SELECT mmsi FROM ais_filter_mmsi WHERE active = 1")
+                    await cur.execute("SELECT mmsi, active FROM ais_filter_mmsi")
                     rows = await cur.fetchall()
         elif sqlite is not None:
             cur = sqlite.cursor()
-            cur.execute("SELECT mmsi FROM ais_filter_mmsi WHERE active = 1")
+            cur.execute("SELECT mmsi, active FROM ais_filter_mmsi")
             rows = cur.fetchall()
         else:
             rows = []
-        _FILTER_MMSIS.update(int(r[0]) for r in rows)
+        _KNOWN_FILTER_MMSIS.update(int(r[0]) for r in rows)
+        _FILTER_MMSIS.update(int(r[0]) for r in rows if bool(r[1]))
     except Exception:
         logger.exception("Failed to load AIS filter MMSIs")
     _FILTER_LOADED = True
@@ -348,6 +352,7 @@ async def add_filter_mmsi(
             )
             sqlite.commit()
         _FILTER_MMSIS.add(int(mmsi))
+        _KNOWN_FILTER_MMSIS.add(int(mmsi))
     except Exception:
         logger.exception("Failed to add MMSI %s to AIS filter", mmsi)
 
@@ -369,6 +374,7 @@ async def remove_filter_mmsi(mmsi: int) -> None:
             cur.execute("DELETE FROM ais_filter_mmsi WHERE mmsi = ?", (int(mmsi),))
             sqlite.commit()
         _FILTER_MMSIS.discard(int(mmsi))
+        _KNOWN_FILTER_MMSIS.discard(int(mmsi))
     except Exception:
         logger.exception("Failed to remove MMSI %s from AIS filter", mmsi)
 
@@ -403,28 +409,31 @@ async def set_filter_mmsis(mmsis: list[int]) -> None:
             sqlite.commit()
         _FILTER_MMSIS.clear()
         _FILTER_MMSIS.update(vals)
+        _KNOWN_FILTER_MMSIS.clear()
+        _KNOWN_FILTER_MMSIS.update(vals)
     except Exception:
         logger.exception("Failed to replace AIS filter MMSIs")
 
 
 # ── Public API: queue ship updates ──────────────────────────────────────────────
 
-async def queue_ship_update(mmsi: int, ship: dict[str, Any]) -> None:
-    """Queue a ship record for batch DB upsert. Called from ais_stream on every update."""
+def queue_ship_update(mmsi: int, ship: dict[str, Any]) -> None:
+    """Queue the latest vessel state and a rate-limited breadcrumb without task churn."""
     if database._pool is None and database._sqlite is None:
         return
-    async with _lock:
-        _pending[mmsi] = ship
-        lat, lng = ship.get("lat"), ship.get("lng")
-        if lat is not None and lng is not None:
-            _pending_tracks.append((
-                mmsi,
-                float(lat),
-                float(lng),
-                ship.get("speed"),
-                ship.get("heading"),
-                time.time(),
-            ))
+    _pending[mmsi] = ship
+    now = time.time()
+    lat, lng = ship.get("lat"), ship.get("lng")
+    if lat is not None and lng is not None and now - _last_track_queued_at.get(mmsi, 0) >= TRACK_POINT_MIN_INTERVAL:
+        _pending_tracks.append((
+            mmsi,
+            float(lat),
+            float(lng),
+            ship.get("speed"),
+            ship.get("heading"),
+            now,
+        ))
+        _last_track_queued_at[mmsi] = now
 
 
 def pending_count() -> int:
@@ -612,6 +621,11 @@ async def _flush_pending() -> None:
         return
 
     vessel_rows = _prepare_vessel_rows(vessels) if vessels else []
+    filter_rows = [
+        (r[0], r[1] or "Auto-Ingested", "stream", r[17])
+        for r in vessel_rows
+        if r[0] not in _KNOWN_FILTER_MMSIS
+    ]
 
     try:
         if pool is not None:
@@ -651,23 +665,12 @@ async def _flush_pending() -> None:
                             vessel_rows,
                         )
 
-                        # Automatically store unique MMSI in ais_filter_mmsi (Insert if not exists, update alias/time if exists)
-                        filter_rows = [
-                            (r[0], r[1] or "Auto-Ingested", "stream", r[17] if len(r) > 17 else time.time())
-                            for r in vessel_rows
-                        ]
+                    if filter_rows:
                         await cur.executemany(
-                            """
-                            INSERT INTO ais_filter_mmsi (mmsi, alias, source, added_at, active)
-                            VALUES (%s, %s, %s, %s, 1) AS new_filt
-                            ON DUPLICATE KEY UPDATE
-                                alias = COALESCE(new_filt.alias, ais_filter_mmsi.alias),
-                                active = 1
-                            """,
+                            "INSERT IGNORE INTO ais_filter_mmsi (mmsi, alias, source, added_at, active) "
+                            "VALUES (%s, %s, %s, %s, 1)",
                             filter_rows,
                         )
-                        for fr in filter_rows:
-                            _FILTER_MMSIS.add(fr[0])
 
                     if tracks:
                         await cur.executemany(
@@ -710,22 +713,12 @@ async def _flush_pending() -> None:
                     """,
                     vessel_rows,
                 )
-                filter_rows = [
-                    (r[0], r[1] or "Auto-Ingested", "stream", r[17] if len(r) > 17 else time.time())
-                    for r in vessel_rows
-                ]
-                cur.executemany(
-                    """
-                    INSERT INTO ais_filter_mmsi (mmsi, alias, source, added_at, active)
-                    VALUES (?, ?, ?, ?, 1)
-                    ON CONFLICT(mmsi) DO UPDATE SET
-                        alias = COALESCE(excluded.alias, ais_filter_mmsi.alias),
-                        active = 1
-                    """,
-                    filter_rows,
-                )
-                for fr in filter_rows:
-                    _FILTER_MMSIS.add(fr[0])
+                if filter_rows:
+                    cur.executemany(
+                        "INSERT OR IGNORE INTO ais_filter_mmsi (mmsi, alias, source, added_at, active) "
+                        "VALUES (?, ?, ?, ?, 1)",
+                        filter_rows,
+                    )
             if tracks:
                 cur.executemany(
                     "INSERT INTO ais_track_points (mmsi, lat, lng, speed, heading, recorded_at) "
@@ -733,6 +726,10 @@ async def _flush_pending() -> None:
                     tracks,
                 )
             sqlite.commit()
+
+        for row in filter_rows:
+            _KNOWN_FILTER_MMSIS.add(row[0])
+            _FILTER_MMSIS.add(row[0])
 
         if vessel_rows:
             logger.debug("Flushed %d vessels and %d track points to DB", len(vessel_rows), len(tracks))

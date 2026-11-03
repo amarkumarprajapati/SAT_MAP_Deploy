@@ -255,7 +255,7 @@ async def _handle_message(raw: str | bytes) -> None:
             _normalize_ship_size(existing)
             _ships[mmsi] = existing
             # Persist to database
-            asyncio.ensure_future(ais_db.queue_ship_update(mmsi, existing.copy()))
+            ais_db.queue_ship_update(mmsi, existing.copy())
             update = existing.copy()
             for queue in tuple(_ship_subscribers):
                 if queue.full():
@@ -306,7 +306,7 @@ async def ingest_external_ship(mmsi: int, fields: dict[str, Any]) -> None:
             _normalize_ship_size(existing)
             existing["timestamp"] = time.time()
             _ships[mmsi] = existing
-            asyncio.ensure_future(ais_db.queue_ship_update(mmsi, existing.copy()))
+            ais_db.queue_ship_update(mmsi, existing.copy())
             update = existing.copy()
             for queue in tuple(_ship_subscribers):
                 if queue.full():

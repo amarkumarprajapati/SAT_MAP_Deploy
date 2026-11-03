@@ -232,7 +232,6 @@ async def maritime_ws(websocket: WebSocket):
                 bounds=filter_state["bounds"],
                 center=filter_state["center"],
             )
-
             include_ports = filter_state["include_ports"]
             payload = {
                 "type": "maritime_snapshot",

@@ -1018,6 +1018,9 @@ function LTmap({
     null,
   );
   const lastShipsUpdateTimeRef = useRef(0);
+  const shipMarkerRowsRef = useRef<Array<Record<string, unknown>>>([]);
+  const shipMarkerCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawShipMarkersRef = useRef<() => void>(() => {});
   const pendingShipsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -1624,11 +1627,9 @@ function LTmap({
         }
 
         ctx.restore();
-        map.addImage(id, {
-          width: 32,
-          height: 32,
-          data: new Uint8Array(ctx.getImageData(0, 0, 32, 32).data),
-        });
+        // MapLibre accepts ImageData directly. Passing a DOM ImageData object
+        // avoids sprite-atlas upload differences between browser/GPU drivers.
+        map.addImage(id, ctx.getImageData(0, 0, 32, 32));
       };
 
       registerShipIcon("ship-marker", "#00e5ff", "#38bdf8", "cargo");
@@ -1999,55 +2000,20 @@ function LTmap({
         },
       });
 
-      // Maritime Ships Under-Glow
+      // Keep an invisible hit target for vessel clicks. The visible ship shapes
+      // are drawn on a canvas overlay so they do not depend on sprite/glyph support.
       map.addLayer({
-        id: "ship-glow",
+        id: "ship-dots",
         type: "circle",
         source: "maritime-ships",
         paint: {
-          "circle-radius": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            1,
-            3.5,
-            5,
-            6,
-            10,
-            10,
-          ],
-          "circle-color": [
-            "match",
-            ["get", "type"],
-            "tanker",
-            "#ff9500",
-            "military",
-            "#ff1744",
-            "container",
-            "#00e5ff",
-            "cargo",
-            "#00e5ff",
-            "#00e5ff",
-          ],
-          "circle-opacity": 0.45,
-          "circle-blur": 0.85,
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 2.5, 5, 3.5, 10, 5],
+          "circle-color": ["match", ["get", "type"], "tanker", "#ff9d24", "military", "#ff3155", "#00e5ff"],
+          "circle-opacity": 0.28,
+          "circle-stroke-color": "#e8fbff",
+          "circle-stroke-width": 1,
+          "circle-stroke-opacity": 0.85,
         },
-      });
-
-      // Maritime Ships
-      map.addLayer({
-        id: "ship-dots",
-        type: "symbol",
-        source: "maritime-ships",
-        layout: {
-          "icon-image": ["coalesce", ["get", "iconKey"], "ship-unknown-cargo"],
-          "icon-size": ["*", ["interpolate", ["linear"], ["zoom"], 1, 0.52, 5, 0.72, 10, 0.95], ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]],
-          "icon-rotate": ["coalesce", ["get", "heading"], 0],
-          "icon-rotation-alignment": "map",
-          "icon-allow-overlap": true,
-          "icon-ignore-placement": true,
-        },
-        paint: { "icon-opacity": 0.95 },
       });
       map.addLayer({
         id: "ship-label",
@@ -2519,7 +2485,6 @@ function LTmap({
     );
     const visibility = anyShipActive ? "visible" : "none";
     for (const id of [
-      "ship-glow",
       "ship-dots",
       "ship-label",
       "sat-ship-in-view-ring",
@@ -2601,6 +2566,94 @@ function LTmap({
     return () => clearInterval(interval);
   }, [mapReady, activeLayers.day_night, setGeo]);
 
+  // Draw real, heading-oriented vessel silhouettes in a lightweight 2D canvas.
+  // This bypasses MapLibre's sprite atlas and font glyphs for the main ship layer.
+  useEffect(() => {
+    const map = mapRef.current;
+    const container = containerRef.current;
+    if (!mapReady || !map || !container) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.setAttribute("aria-hidden", "true");
+    canvas.style.position = "absolute";
+    canvas.style.inset = "0";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+    canvas.style.pointerEvents = "none";
+    canvas.style.zIndex = "2";
+    container.appendChild(canvas);
+    shipMarkerCanvasRef.current = canvas;
+
+    // Lucide React's Ship icon paths, drawn on one canvas to avoid a separate
+    // DOM/SVG node for every vessel.
+    const shipIconPaths = [
+      new Path2D("M12 10.189V14"),
+      new Path2D("M12 2v3"),
+      new Path2D("M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"),
+      new Path2D("M19.38 20A11.6 11.6 0 0 0 21 14l-8.188-3.639a2 2 0 0 0-1.624 0L3 14a11.6 11.6 0 0 0 2.81 7.76"),
+      new Path2D("M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1s1.2 1 2.5 1c2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"),
+    ];
+
+    const draw = () => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
+      }
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      const zoom = map.getZoom();
+      const size = Math.max(0.9, Math.min(1.5, 0.82 + zoom * 0.1));
+      for (const ship of shipMarkerRowsRef.current) {
+        const lat = Number(ship.lat);
+        const lng = Number(ship.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        const point = map.project([lng, lat]);
+        if (point.x < -20 || point.x > width + 20 || point.y < -20 || point.y > height + 20) continue;
+
+        const type = String(ship.type || "cargo").toLowerCase();
+        const color = type === "tanker" ? "#ff9d24" : type === "military" ? "#ff3155" : "#00e5ff";
+        const heading = Number(ship.heading);
+        ctx.save();
+        ctx.translate(point.x, point.y);
+        if (Number.isFinite(heading)) ctx.rotate((heading * Math.PI) / 180);
+        ctx.scale(size, size);
+        ctx.translate(-12, -12);
+
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 7;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.7;
+        for (const path of shipIconPaths) ctx.stroke(path);
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "#e8fbff";
+        ctx.lineWidth = 1.45;
+        for (const path of shipIconPaths) ctx.stroke(path);
+        ctx.restore();
+      }
+    };
+
+    drawShipMarkersRef.current = draw;
+    map.on("render", draw);
+    map.on("resize", draw);
+    draw();
+
+    return () => {
+      map.off("render", draw);
+      map.off("resize", draw);
+      canvas.remove();
+      shipMarkerCanvasRef.current = null;
+      drawShipMarkersRef.current = () => {};
+    };
+  }, [mapReady]);
+
   // ── Throttled Maritime Ships Layer (prevents MapLibre freeze with 20k vessels) ──
   useEffect(() => {
     if (!mapReady) return;
@@ -2617,6 +2670,8 @@ function LTmap({
     ) {
       if (pendingShipsTimeoutRef.current)
         clearTimeout(pendingShipsTimeoutRef.current);
+      shipMarkerRowsRef.current = [];
+      drawShipMarkersRef.current();
       setGeo("maritime-ships", []);
       return;
     }
@@ -2670,7 +2725,9 @@ function LTmap({
           },
         };
       }
+      shipMarkerRowsRef.current = ships;
       setGeo("maritime-ships", features);
+      drawShipMarkersRef.current();
     };
 
     const now = Date.now();

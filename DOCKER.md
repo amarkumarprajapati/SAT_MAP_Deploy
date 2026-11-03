@@ -1,6 +1,6 @@
 # Deployment
 
-The repository root `compose.yaml` runs the Next.js frontend in production mode, so it does not open the Next.js development HMR WebSocket. The FastAPI backend runs with automatic reload. The OSINT service and MySQL database run alongside them.
+The repository root `compose.yaml` runs the Next.js frontend in production mode, so it does not open the Next.js development HMR WebSocket. The FastAPI backend runs with automatic reload and owns the live AIS connections and persistence. The OSINT service and MySQL database run alongside it. Do not run the standalone `ais_db` recorder while this backend is running; both processes would subscribe to the same AIS feeds and write duplicate updates to MySQL.
 
 ## Configure and start
 
