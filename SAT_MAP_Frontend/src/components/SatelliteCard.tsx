@@ -196,7 +196,7 @@ export default function SatelliteCard({
 
   return (
     <div
-      className="pointer-events-auto fixed right-6 bottom-6 z-[350] w-84 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-white/10 bg-slate-950/90 shadow-2xl backdrop-blur-2xl transition-all duration-200 select-none animate-in fade-in slide-in-from-bottom-2"
+      className="pointer-events-auto fixed right-3 bottom-3 z-[350] box-border flex max-h-[calc(100dvh-1.5rem)] w-[min(20rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-950/90 shadow-2xl backdrop-blur-2xl transition-all duration-200 select-none animate-in fade-in slide-in-from-bottom-2"
       style={{
         borderTop: `2px solid ${accent}`,
       }}
@@ -204,7 +204,7 @@ export default function SatelliteCard({
       aria-label={`Satellite ${sat.name}`}
     >
       {/* Header bar */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/5 bg-white/[0.02]">
+      <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2 border-b border-white/5 bg-white/[0.02]">
         <div className="flex min-w-0 items-center gap-2">
           <div
             className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -252,6 +252,7 @@ export default function SatelliteCard({
         </div>
       </div>
 
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
       {/* SATELLITE IMAGE BANNER / SHIMMER UNTIL DATA LOADS (NO HARDCODED PLACEHOLDERS) */}
       {isImageLoading ? (
         <div className="relative h-36 w-full overflow-hidden bg-slate-900/80 border-b border-white/10 flex flex-col items-center justify-center p-3 select-none">
@@ -471,8 +472,7 @@ export default function SatelliteCard({
 
         </div>
       )}
-
-    
+      </div>
     </div>
   );
 }

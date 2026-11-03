@@ -62,7 +62,7 @@ export default function VesselFullDetailsPanel({
   const error = result.mmsi === mmsi ? result.error : null;
   const route = Array.isArray(data?.track) ? data.track : [];
   const rows = useMemo(
-    () => Object.entries(data ?? {}).filter(([key, value]) => key !== "track" && value !== null && value !== undefined && value !== "" && typeof value !== "object"),
+    () => Object.entries(data ?? {}).filter(([key, value]) => key !== "track" && value !== null && value !== undefined && value !== ""),
     [data],
   );
   const currentName = String(data?.name ?? ship.name ?? "Unidentified Vessel");
@@ -71,7 +71,7 @@ export default function VesselFullDetailsPanel({
   const distance = Number(data?.trackDistanceKm ?? ship.trackDistanceKm ?? 0);
 
   return (
-    <aside className="pointer-events-auto fixed right-3 top-[76px] z-[245] flex max-h-[calc(100vh-190px)] w-[min(370px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-cyan-400/30 bg-[#07101df5] text-white shadow-[0_18px_60px_rgba(0,0,0,.62)] backdrop-blur-2xl" aria-label="Full vessel details">
+    <aside className="pointer-events-auto fixed right-3 top-[76px] z-[245] flex max-h-[calc(100vh-190px)] max-lg:top-[72px] max-lg:max-h-[46vh] w-[min(370px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-cyan-400/30 bg-[#07101df5] text-white shadow-[0_18px_60px_rgba(0,0,0,.62)] backdrop-blur-2xl" aria-label="Full vessel details">
       <header className="flex items-start justify-between gap-3 border-b border-white/10 bg-gradient-to-r from-cyan-950/50 to-transparent p-3">
         <div className="flex min-w-0 items-start gap-2.5">
           <span className="mt-0.5 rounded-lg border border-cyan-300/25 bg-cyan-300/10 p-2 text-cyan-300"><Ship size={16} /></span>
@@ -96,7 +96,7 @@ export default function VesselFullDetailsPanel({
           <>
             <div className="mb-2 font-mono text-[8px] font-bold tracking-[.16em] text-cyan-300">ALL AVAILABLE AIS FIELDS · {rows.length}</div>
             <dl className="space-y-1">
-              {rows.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5"><dt className="break-words text-[9px] text-zinc-500">{labelFor(key)}</dt><dd className="break-words text-right font-mono text-[9px] text-zinc-200">{displayValue(key, value)}</dd></div>)}
+              {rows.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-1.5"><dt className="break-words text-[9px] text-zinc-500">{labelFor(key)}</dt><dd className="max-h-24 overflow-auto whitespace-pre-wrap break-words text-right font-mono text-[9px] text-zinc-200">{displayValue(key, value)}</dd></div>)}
             </dl>
             <div className="mb-2 mt-4 font-mono text-[8px] font-bold tracking-[.16em] text-cyan-300">RECENT TRACK HISTORY · {route.length}</div>
             {route.length ? <div className="space-y-1">{route.slice(-12).reverse().map((point, index) => <div key={`${String(point.timestamp ?? index)}-${index}`} className="grid grid-cols-[1fr_auto] gap-2 rounded-md bg-white/[0.025] px-2 py-1.5 font-mono text-[8px] text-zinc-300"><span>{Number(point.lat).toFixed(4)}°, {Number(point.lng).toFixed(4)}° · {displayValue("speed", point.speed)} kn</span><span className="text-zinc-500">{displayValue("timestamp", point.timestamp)}</span></div>)}</div> : <div className="text-[9px] text-zinc-500">No persisted route fixes are available yet.</div>}

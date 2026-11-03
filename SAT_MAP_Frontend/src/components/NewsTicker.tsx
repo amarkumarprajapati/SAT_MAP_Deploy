@@ -83,7 +83,7 @@ export default function NewsTicker({ onFlyToLocation }: NewsTickerProps) {
       aria-label="Bottom Television News Ticker Crawl"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
-      className="fixed bottom-0 left-0 right-0 z-210 w-full h-7 sm:h-7.5 bg-[#050811]/95 border-t border-cyan-500/20 backdrop-blur-2xl flex items-center select-none pointer-events-auto overflow-hidden transition-all"
+      className="fixed bottom-0 left-0 right-0 z-210 w-full h-5 sm:h-6 bg-[#050811]/95 border-t border-cyan-500/20 backdrop-blur-2xl flex items-center select-none pointer-events-auto overflow-hidden transition-all"
     >
     
       {/* ── 3. TV NEWS CRAWL TRACK (HORIZONTAL MOVING LINE) ── */}
@@ -107,7 +107,7 @@ export default function NewsTicker({ onFlyToLocation }: NewsTickerProps) {
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleItemClick(item);
               }}
-              className="flex items-center gap-1.5 font-mono text-[10px] cursor-pointer hover:bg-white/10 px-2 py-0.5 rounded transition flex-shrink-0"
+              className="flex items-center gap-1.5 font-mono text-[9px] cursor-pointer hover:bg-white/10 px-1.5 py-0.5 rounded transition flex-shrink-0"
               title={
                 item.lat
                   ? `Click to fly to ${item.label || item.value} on map`

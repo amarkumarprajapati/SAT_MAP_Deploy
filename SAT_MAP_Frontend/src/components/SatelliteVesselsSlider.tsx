@@ -93,7 +93,7 @@ export default function SatelliteVesselsSlider({
 
   return (
     <div
-      className="pointer-events-auto fixed top-0 right-0 bottom-0 z-400 w-full sm:w-[460px] max-w-[100vw] bg-[#070b14]/95 backdrop-blur-3xl border-l border-white/10  flex flex-col text-slate-100 select-none animate-in slide-in-from-right duration-300 ease-out"
+      className="pointer-events-auto fixed top-0 right-0 bottom-0 z-400 w-full sm:w-[400px] max-w-[100vw] bg-[#070b14]/95 backdrop-blur-3xl border-l border-white/10 flex flex-col text-slate-100 select-none animate-in slide-in-from-right duration-300 ease-out"
       style={{
         borderLeft: `1px solid ${accent}40`
       }}

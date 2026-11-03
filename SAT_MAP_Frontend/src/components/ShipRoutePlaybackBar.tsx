@@ -170,7 +170,7 @@ export default function ShipRoutePlaybackBar({ ship, onClose, onToggleDetails, d
 
   if (!ship) return null;
   return (
-    <section className="pointer-events-auto fixed bottom-9 left-1/2 z-[240] w-[min(760px,calc(100vw-1.5rem))] -translate-x-1/2 rounded-2xl border border-cyan-400/30 bg-[#07101df5] px-3 py-2.5 text-white shadow-[0_14px_48px_rgba(0,0,0,.58),0_0_22px_rgba(0,229,255,.10)] backdrop-blur-2xl sm:px-4" aria-label="Vessel route telemetry and playback">
+    <section className={`pointer-events-auto fixed bottom-9 left-1/2 z-[240] box-border min-w-0 max-w-[calc(100vw-1rem)] w-[min(760px,calc(100vw-1.5rem))] max-h-[calc(100dvh-3rem)] overflow-x-hidden overflow-y-auto -translate-x-1/2 rounded-2xl border border-cyan-400/30 bg-[#07101df5] px-3 py-2.5 text-white shadow-[0_14px_48px_rgba(0,0,0,.58),0_0_22px_rgba(0,229,255,.10)] backdrop-blur-2xl sm:px-4${detailsOpen ? " lg:left-[calc((100vw-380px)/2)] lg:max-w-[calc(100vw-400px)] lg:w-[min(760px,calc(100vw-400px))]" : ""}`} aria-label="Vessel route telemetry and playback">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Route size={14} className="shrink-0 text-cyan-300" />
@@ -181,11 +181,11 @@ export default function ShipRoutePlaybackBar({ ship, onClose, onToggleDetails, d
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <button type="button" onClick={onToggleDetails} aria-pressed={detailsOpen} className={`flex h-9 items-center gap-1.5 rounded-lg border px-2 font-mono text-[9px] font-bold transition ${detailsOpen ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-200" : "border-white/15 bg-white/5 text-zinc-300 hover:border-cyan-300/40 hover:text-cyan-200"}`} aria-label={detailsOpen ? "Hide vessel data card" : "Show vessel data card"} title={detailsOpen ? "Hide vessel data" : "Show vessel data"}>
-            <PanelRightOpen size={13} /><span>VESSEL DATA</span>
+            <PanelRightOpen size={13} /><span className="max-sm:hidden">VESSEL DATA</span>
           </button>
           <button type="button" onClick={togglePlay} disabled={route.length < 2} className="flex h-9 items-center gap-2 rounded-lg border border-cyan-300/50 bg-cyan-300 px-3 font-mono text-[10px] font-extrabold text-slate-950 shadow-[0_0_14px_rgba(0,229,255,.24)] transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-45" aria-label={playing ? "Pause vessel route playback" : "Play vessel route from start to endpoint"} title={playing ? "Pause route playback" : route.length < 2 ? "No historical route fixes available" : "Play route from start to endpoint"}>
             {playing ? <Pause size={14} fill="currentColor" /> : progress >= 1 ? <RotateCcw size={14} /> : <Play size={14} fill="currentColor" />}
-            <span>{playing ? "PAUSE" : route.length < 2 ? "NO TRACK" : progress >= 1 ? "REPLAY" : "PLAY ROUTE"}</span>
+            <span className="max-sm:hidden">{playing ? "PAUSE" : route.length < 2 ? "NO TRACK" : progress >= 1 ? "REPLAY" : "PLAY ROUTE"}</span>
           </button>
           <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-zinc-400 transition hover:border-rose-400/40 hover:bg-rose-400/10 hover:text-rose-300" aria-label="Close route telemetry" title="Close route telemetry">
             <X size={15} />

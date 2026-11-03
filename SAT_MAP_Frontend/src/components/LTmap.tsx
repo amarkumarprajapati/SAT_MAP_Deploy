@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState, useCallback, memo } from "react";
 import * as maplibregl from "maplibre-gl";
@@ -100,11 +100,11 @@ function SatellitePlaybackBar({
 
   return (
     <section
-      className="pointer-events-auto fixed bottom-10 left-1/2 z-[230] w-[min(840px,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-cyan-500/35 bg-[#060a14]/95 text-white shadow-[0_16px_50px_rgba(0,0,0,0.85),0_0_30px_rgba(0,229,255,0.15)] backdrop-blur-2xl"
+      className="pointer-events-auto fixed bottom-8 left-1/2 z-[230] box-border min-w-0 w-[min(680px,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-hidden rounded-2xl border border-cyan-500/35 bg-[#060a14]/95 text-white shadow-[0_16px_50px_rgba(0,0,0,0.85),0_0_30px_rgba(0,229,255,0.15)] backdrop-blur-2xl"
       aria-label="Satellite orbital playback controls"
     >
-      {/* ── TOP BAR: BALANCED CONTROLS & SATELLITE TELEMETRY ── */}
-      <div className="flex items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-2.5">
+      {/* â”€â”€ TOP BAR: BALANCED CONTROLS & SATELLITE TELEMETRY â”€â”€ */}
+      <div className="flex min-w-0 items-center justify-between gap-2 border-b border-white/[0.08] px-3 py-1.5">
         {/* Left: Play/Pause button + Satellite name + Status badge */}
         <div className="flex min-w-0 items-center gap-2.5">
           <button
@@ -135,24 +135,24 @@ function SatellitePlaybackBar({
             >
               {satellite.name}
             </span>
-            <span className="shrink-0 flex items-center gap-1.5 rounded-md border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 font-mono text-[9px] font-semibold text-cyan-300">
+            <span className="shrink-0 flex items-center gap-1.5 rounded-md border border-cyan-400/30 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[8px] font-semibold text-cyan-300">
               <span
                 className={`w-1.5 h-1.5 rounded-full ${playing ? "bg-cyan-400 animate-pulse" : "bg-zinc-500"}`}
               />
-              <span>
-                {playing ? "LIVE PLAYBACK" : "PAUSED"} · {rate}×
+              <span className="max-sm:hidden">
+                {playing ? "LIVE PLAYBACK" : "PAUSED"} Â· {rate}Ã—
               </span>
             </span>
           </div>
         </div>
 
         {/* Right: Heading telemetry + Speed pills + Skip + Close */}
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1">
           {Number.isFinite(heading) && (
             <div className="hidden font-mono text-[10px] text-zinc-400 sm:flex items-center gap-1 px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.06]">
               <span className="text-zinc-500 font-medium">HDG</span>
               <span className="text-cyan-300 font-bold">
-                {Math.round(heading)}°
+                {Math.round(heading)}Â°
               </span>
             </div>
           )}
@@ -166,14 +166,14 @@ function SatellitePlaybackBar({
                 key={value}
                 type="button"
                 onClick={() => onRateChange(value)}
-                className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold transition-all cursor-pointer ${
+                className={`rounded px-1 py-0.5 font-mono text-[8px] font-semibold transition-all cursor-pointer ${
                   rate === value
                     ? "bg-cyan-400 text-slate-950 font-bold shadow-[0_0_8px_rgba(0,229,255,0.4)]"
                     : "text-zinc-400 hover:bg-white/10 hover:text-white"
                 }`}
                 title={`Playback speed ${value}x`}
               >
-                {value}×
+                {value}Ã—
               </button>
             ))}
           </div>
@@ -202,8 +202,8 @@ function SatellitePlaybackBar({
         </div>
       </div>
 
-      {/* ── BOTTOM SECTION: FULL-WIDTH SCRUBBER & TIMESTAMPS ── */}
-      <div className="px-4 pt-2.5 pb-2.5">
+      {/* â”€â”€ BOTTOM SECTION: FULL-WIDTH SCRUBBER & TIMESTAMPS â”€â”€ */}
+      <div className="px-3 pt-1.5 pb-1.5">
         <input
           aria-label="Seek along satellite orbit"
           type="range"
@@ -218,18 +218,18 @@ function SatellitePlaybackBar({
           }}
         />
 
-        <div className="mt-1.5 flex items-center justify-between font-mono text-[9px] text-zinc-400 tabular-nums">
-          <span>{new Date(start).toLocaleTimeString()}</span>
-          <span className="font-semibold text-cyan-300 drop-shadow-[0_0_8px_rgba(0,229,255,0.45)]">
-            <span className="text-zinc-500 font-normal">MISSION CLOCK · </span>
+        <div className="mt-1 flex items-center justify-between gap-2 font-mono text-[8px] text-zinc-400 tabular-nums">
+          <span className="max-w-[30%] truncate">{new Date(start).toLocaleTimeString()}</span>
+          <span className="min-w-0 truncate text-center font-semibold text-cyan-300 drop-shadow-[0_0_8px_rgba(0,229,255,0.45)]">
+            <span className="text-zinc-500 font-normal max-sm:hidden">MISSION CLOCK Â· </span>
             {dateLabel}
           </span>
-          <span>{new Date(end).toLocaleTimeString()}</span>
+          <span className="max-w-[30%] truncate">{new Date(end).toLocaleTimeString()}</span>
         </div>
       </div>
 
       {!hasTle && (
-        <div className="px-4 pb-2 font-mono text-[9px] text-cyan-300/80">
+        <div className="px-3 pb-1.5 font-mono text-[8px] text-cyan-300/80">
           This satellite has no orbital elements (TLE) for trajectory playback.
         </div>
       )}
@@ -1020,9 +1020,6 @@ function LTmap({
     null,
   );
   const lastShipsUpdateTimeRef = useRef(0);
-  const shipMarkerRowsRef = useRef<Array<Record<string, unknown>>>([]);
-  const shipMarkerCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const drawShipMarkersRef = useRef<() => void>(() => {});
   const pendingShipsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -1132,7 +1129,7 @@ function LTmap({
     map.addLayer({ id: "selected-ship-playback-line", type: "line", source: sourceId, filter: ["==", ["get", "kind"], "playback-route"], paint: { "line-color": "#ffd600", "line-width": 2.5, "line-opacity": 0.9, "line-dasharray": [2, 1] } });
     map.addLayer({ id: "selected-ship-route-endpoints", type: "circle", source: sourceId, filter: ["in", ["get", "kind"], ["literal", ["route-start", "route-end"]]], paint: { "circle-radius": 5, "circle-color": ["match", ["get", "kind"], "route-start", "#34d399", "#fbbf24"], "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 } });
 
-    // 5. Selected Vessel Under-Halo
+    // 5. Selected vessel highlight stays in the map's cyan color palette.
     map.addLayer({
       id: "selected-ship-halo",
       type: "circle",
@@ -1150,24 +1147,24 @@ function LTmap({
           10,
           22,
         ],
-        "circle-color": "#ffd600",
-        "circle-opacity": 0.35,
+        "circle-color": "#00e5ff",
+        "circle-opacity": 0.28,
         "circle-blur": 0.6,
-        "circle-stroke-color": "#fffbeb",
-        "circle-stroke-width": 1.5,
+        "circle-stroke-color": "#b8f7ff",
+        "circle-stroke-width": 1.2,
       },
     });
     map.addLayer({ id: "selected-ship-playback-halo", type: "circle", source: "selected-ship-marker", paint: { "circle-radius": 17, "circle-color": "#ffd600", "circle-opacity": 0.3, "circle-blur": 0.6 } });
     map.addLayer({ id: "selected-ship-playback-marker", type: "symbol", source: "selected-ship-marker", layout: { "icon-image": ["coalesce", ["get", "iconKey"], "ship-selected-unknown-cargo"], "icon-size": ["*", 1.15, ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]], "icon-rotate": ["coalesce", ["get", "heading"], 0], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true }, paint: { "icon-opacity": 1 } });
 
-    // 6. Selected Vessel Symbol (Changes the ship icon itself to glowing gold!)
+    // 6. Selected vessel uses the same class and color as its normal map icon.
     map.addLayer({
       id: "selected-ship-vessel",
       type: "symbol",
       source: sourceId,
       filter: ["==", ["get", "kind"], "selected-vessel"],
       layout: {
-        "icon-image": ["coalesce", ["get", "iconKey"], "ship-selected-unknown-cargo"],
+        "icon-image": ["coalesce", ["get", "iconKey"], "ship-unknown-cargo"],
         "icon-size": ["*", ["interpolate", ["linear"], ["zoom"], 1, 0.75, 5, 1.05, 10, 1.4], ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]],
         "icon-rotate": ["coalesce", ["get", "heading"], 0],
         "icon-rotation-alignment": "map",
@@ -1179,33 +1176,11 @@ function LTmap({
       },
     });
 
-    // 7. Selected Vessel Label
-    map.addLayer({
-      id: "selected-ship-vessel-name",
-      type: "symbol",
-      source: sourceId,
-      filter: ["==", ["get", "kind"], "selected-vessel"],
-      layout: {
-        "text-field": ["get", "name"],
-        "text-size": 11,
-        "text-font": ["Open Sans Bold"],
-        "text-offset": [0, 1.8],
-        "text-allow-overlap": true,
-        "text-ignore-placement": true,
-      },
-      paint: {
-        "text-color": "#ffd600",
-        "text-halo-color": "#07101d",
-        "text-halo-width": 2.5,
-      },
-    });
-
     const layerIds = [
       "selected-ship-route-endpoints",
       "selected-ship-playback-line",
       "selected-ship-playback-marker",
       "selected-ship-playback-halo",
-      "selected-ship-vessel-name",
       "selected-ship-vessel",
       "selected-ship-halo",
     ];
@@ -1247,7 +1222,7 @@ function LTmap({
         kind: "selected-vessel",
         type: voyage.vesselCategory,
         heading: voyage.headingDeg,
-        iconKey: vesselIconKey(selectedShip, true),
+        iconKey: vesselIconKey(selectedShip),
         iconScale: vesselIconScale(selectedShip),
         name: String(
           selectedShip.name ||
@@ -1435,7 +1410,7 @@ function LTmap({
       doubleClickZoom: false,
       attributionControl: {
         compact: true,
-        customAttribution: "Geocoding © OpenStreetMap contributors",
+        customAttribution: "Geocoding Â© OpenStreetMap contributors",
       } as const,
       maxPitch: 85,
     };
@@ -1610,6 +1585,7 @@ function LTmap({
         "maritime",
         "maritime-choke",
         "maritime-ships",
+        "maritime-density",
         "sat-ships-in-view",
         "geospatial-video-track",
         "geospatial-video-frame",
@@ -1929,9 +1905,54 @@ function LTmap({
       // Keep an invisible hit target for vessel clicks. The visible ship shapes
       // are drawn on a canvas overlay so they do not depend on sprite/glyph support.
       map.addLayer({
+        id: "ship-density-heat",
+        type: "heatmap",
+        source: "maritime-density",
+        maxzoom: 4.5,
+        paint: {
+          "heatmap-weight": ["interpolate", ["linear"], ["get", "count"], 1, 0.25, 30, 1],
+          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 0.8, 4.5, 1.8],
+          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 16, 4.5, 32],
+          "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(0,229,255,0)", 0.2, "#075985", 0.45, "#00bcd4", 0.7, "#facc15", 1, "#fb7185"],
+          "heatmap-opacity": 0.85,
+        },
+      });
+      map.addLayer({
+        id: "ship-density-count",
+        type: "circle",
+        source: "maritime-density",
+        maxzoom: 4.5,
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["get", "count"], 1, 3, 100, 12],
+          "circle-color": "#00d9f5",
+          "circle-opacity": 0.78,
+          "circle-stroke-color": "#d9fbff",
+          "circle-stroke-width": 1,
+        },
+      });
+      map.addLayer({
+        id: "ship-density-label",
+        type: "symbol",
+        source: "maritime-density",
+        maxzoom: 4.5,
+        layout: {
+          "text-field": ["to-string", ["get", "count"]],
+          "text-size": 10,
+          "text-font": ["Open Sans Bold"],
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "#f0fdff",
+          "text-halo-color": "#082f49",
+          "text-halo-width": 1.2,
+        },
+      });
+
+      map.addLayer({
         id: "ship-dots",
         type: "circle",
         source: "maritime-ships",
+        minzoom: 4.5,
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 2.5, 5, 3.5, 10, 5],
           "circle-color": ["match", ["get", "type"], "tanker", "#ff9d24", "military", "#ff3155", "#00e5ff"],
@@ -1942,10 +1963,26 @@ function LTmap({
         },
       });
       map.addLayer({
+        id: "ship-icons",
+        type: "symbol",
+        source: "maritime-ships",
+        minzoom: 4.5,
+        layout: {
+          "icon-image": ["coalesce", ["get", "iconKey"], "ship-marker"],
+          "icon-size": ["*", ["interpolate", ["linear"], ["zoom"], 4.5, 0.7, 7, 0.9, 12, 1.2], ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]],
+          "icon-rotate": ["coalesce", ["to-number", ["get", "heading"]], 0],
+          "icon-rotation-alignment": "map",
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+          "icon-padding": 0,
+        },
+        paint: { "icon-opacity": 1 },
+      });
+      map.addLayer({
         id: "ship-label",
         type: "symbol",
         source: "maritime-ships",
-        minzoom: 5,
+        minzoom: 7,
         layout: {
           "text-field": ["get", "name"],
           "text-size": 9,
@@ -2425,7 +2462,7 @@ function LTmap({
     activeLayers.ship_military,
   ]);
 
-  // ── Ports & Chokepoints layer (updates only when static ports/chokepoints change) ──
+  // â”€â”€ Ports & Chokepoints layer (updates only when static ports/chokepoints change) â”€â”€
   useEffect(() => {
     if (!mapReady) return;
     setGeo(
@@ -2473,7 +2510,7 @@ function LTmap({
     setGeo,
   ]);
 
-  // ── Day & Night Solar Terminator Layer ──
+  // â”€â”€ Day & Night Solar Terminator Layer â”€â”€
   useEffect(() => {
     if (!mapReady) return;
 
@@ -2496,95 +2533,7 @@ function LTmap({
  
 
 
-  // Draw real, heading-oriented vessel silhouettes in a lightweight 2D canvas.
-  // This bypasses MapLibre's sprite atlas and font glyphs for the main ship layer.
-  useEffect(() => {
-    const map = mapRef.current;
-    const container = containerRef.current;
-    if (!mapReady || !map || !container) return;
-
-    const canvas = document.createElement("canvas");
-    canvas.setAttribute("aria-hidden", "true");
-    canvas.style.position = "absolute";
-    canvas.style.inset = "0";
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-    canvas.style.pointerEvents = "none";
-    canvas.style.zIndex = "2";
-    container.appendChild(canvas);
-    shipMarkerCanvasRef.current = canvas;
-
-    // Clean vessel arrow silhouette drawn in a 0–24 coordinate box.
-    const drawShipShape = (ctx: CanvasRenderingContext2D, color: string, sz: number) => {
-      // Simple filled triangle pointing up (bow at top)
-      ctx.beginPath();
-      ctx.moveTo(0, -10 * sz);   // bow (top)
-      ctx.lineTo(6 * sz, 8 * sz);  // starboard stern
-      ctx.lineTo(0, 5 * sz);      // center notch
-      ctx.lineTo(-6 * sz, 8 * sz); // port stern
-      ctx.closePath();
-      // Fill with color
-      ctx.fillStyle = color;
-      ctx.fill();
-      // Thin outline
-      ctx.strokeStyle = "#e8fbff";
-      ctx.lineWidth = 0.6;
-      ctx.lineJoin = "round";
-      ctx.stroke();
-    };
-
-    const draw = () => {
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      const width = container.clientWidth;
-      const height = container.clientHeight;
-      const ratio = Math.min(window.devicePixelRatio || 1, 2);
-      if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
-        canvas.width = Math.round(width * ratio);
-        canvas.height = Math.round(height * ratio);
-      }
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-
-      const zoom = map.getZoom();
-      const size = Math.max(0.5, Math.min(1.3, 0.4 + zoom * 0.08));
-      for (const ship of shipMarkerRowsRef.current) {
-        const lat = Number(ship.lat);
-        const lng = Number(ship.lng);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-        const point = map.project([lng, lat]);
-        if (point.x < -20 || point.x > width + 20 || point.y < -20 || point.y > height + 20) continue;
-
-        const type = String(ship.type || "cargo").toLowerCase();
-        const color = type === "tanker" ? "#ff9d24" : type === "military" ? "#ff3155" : "#00e5ff";
-        const heading = Number(ship.heading);
-        ctx.save();
-        ctx.translate(point.x, point.y);
-        if (Number.isFinite(heading)) ctx.rotate((heading * Math.PI) / 180);
-        // Subtle glow
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 4;
-        drawShipShape(ctx, color, size);
-        ctx.shadowBlur = 0;
-        ctx.restore();
-      }
-    };
-
-    drawShipMarkersRef.current = draw;
-    map.on("render", draw);
-    map.on("resize", draw);
-    draw();
-
-    return () => {
-      map.off("render", draw);
-      map.off("resize", draw);
-      canvas.remove();
-      shipMarkerCanvasRef.current = null;
-      drawShipMarkersRef.current = () => {};
-    };
-  }, [mapReady]);
-
-  // ── Throttled Maritime Ships Layer (prevents MapLibre freeze with 20k vessels) ──
+  // â”€â”€ Throttled Maritime Ships Layer (prevents MapLibre freeze with 20k vessels) â”€â”€
   useEffect(() => {
     if (!mapReady) return;
 
@@ -2600,14 +2549,16 @@ function LTmap({
     ) {
       if (pendingShipsTimeoutRef.current)
         clearTimeout(pendingShipsTimeoutRef.current);
-      shipMarkerRowsRef.current = [];
-      drawShipMarkersRef.current();
       setGeo("maritime-ships", []);
+      setGeo("maritime-density", []);
       return;
     }
 
+    let detailMode = (mapRef.current?.getZoom() ?? 0) >= 4.5;
     const updateShipSource = () => {
+      if (pendingShipsTimeoutRef.current) clearTimeout(pendingShipsTimeoutRef.current);
       lastShipsUpdateTimeRef.current = Date.now();
+      pendingShipsTimeoutRef.current = null;
       const rawShips = (data.maritime_ships || []) as Array<
         Record<string, unknown>
       >;
@@ -2620,8 +2571,37 @@ function LTmap({
         return showCargo;
       });
 
-      const features = new Array(ships.length);
-      for (let i = 0; i < ships.length; i++) {
+      const map = mapRef.current;
+      const showIndividualShips = (map?.getZoom() ?? 0) >= 4.5;
+      detailMode = showIndividualShips;
+      const densityBins = new Map<string, { lng: number; lat: number; count: number }>();
+      if (!showIndividualShips) {
+        // At world scale, aggregate locations into roughly 100 km cells.
+        // This keeps both the rendered layer and transferred GeoJSON small.
+        const cellSize = 1;
+        for (const ship of ships) {
+          const lat = Number(ship.lat);
+          const lng = Number(ship.lng);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
+          const latCellSize = cellSize;
+          const lngCellSize = cellSize / Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+          const latCell = Math.floor(lat / latCellSize);
+          const lngCell = Math.floor(lng / lngCellSize);
+          const key = `${latCell}:${lngCell}`;
+          const bin = densityBins.get(key);
+          if (bin) bin.count++;
+          else densityBins.set(key, { lat: (latCell + 0.5) * latCellSize, lng: (lngCell + 0.5) * lngCellSize, count: 1 });
+        }
+      }
+      const densityFeatures: GeoJSON.Feature[] = Array.from(densityBins.values(), (bin) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [bin.lng, bin.lat] },
+        properties: { count: bin.count },
+      }));
+      setGeo("maritime-density", densityFeatures);
+
+      const features = showIndividualShips ? new Array(ships.length) : [];
+      for (let i = 0; i < features.length; i++) {
         const s = ships[i];
         features[i] = {
           type: "Feature",
@@ -2655,9 +2635,7 @@ function LTmap({
           },
         };
       }
-      shipMarkerRowsRef.current = ships;
       setGeo("maritime-ships", features);
-      drawShipMarkersRef.current();
     };
 
     const now = Date.now();
@@ -2678,7 +2656,15 @@ function LTmap({
       }, THROTTLE_MS - elapsed);
     }
 
+    const map = mapRef.current;
+    const onZoomEnd = () => {
+      const nextDetailMode = (map?.getZoom() ?? 0) >= 4.5;
+      if (nextDetailMode !== detailMode) updateShipSource();
+    };
+    map?.on("zoomend", onZoomEnd);
+
     return () => {
+      map?.off("zoomend", onZoomEnd);
       if (pendingShipsTimeoutRef.current) {
         clearTimeout(pendingShipsTimeoutRef.current);
         pendingShipsTimeoutRef.current = null;
@@ -3853,7 +3839,7 @@ function LTmap({
       {mapReady && showMapControls && <MapControls mapRef={mapRef} />}
       {mapReady && activeLayers.wind && (
         <div className="pointer-events-none absolute bottom-40 left-4 z-[210] rounded-xl border border-emerald-200/20 bg-slate-950/90 px-3 py-2 text-[10px] text-emerald-50 shadow-lg backdrop-blur-md">
-          <div className="mb-1.5 flex items-center gap-1.5 font-mono font-semibold uppercase tracking-wider"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />Wind · 10 m</div>
+          <div className="mb-1.5 flex items-center gap-1.5 font-mono font-semibold uppercase tracking-wider"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />Wind Â· 10 m</div>
           <div className="h-1.5 w-36 rounded-full bg-gradient-to-r from-sky-400 via-emerald-300 via-yellow-300 to-orange-400" />
           <div className="mt-1 flex justify-between font-mono text-[9px] text-white/55"><span>0 m/s</span><span>20+ m/s</span></div>
         </div>
@@ -3928,17 +3914,16 @@ function LTmap({
         }
         const areaKm2 = coverageAreaMode === "total" ? totalAreaKm2 : viewAreaKm2;
         return (
-          <div className="pointer-events-auto fixed bottom-10 left-1/2 z-[220] w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-cyan-400/30 bg-[#060a14]/95 px-3.5 py-3 font-mono text-[10px] text-cyan-100 shadow-xl backdrop-blur-xl sm:bottom-12">
-            <div className="flex items-center justify-between"><span className="text-[9px] uppercase tracking-widest text-cyan-300">Ground coverage · {selectedSat.name}</span><span className="text-[8px] text-zinc-500">ESTIMATE</span></div>
-            <div className="mt-2 grid grid-cols-2 gap-3">
-              <div><span className="text-zinc-500">{coverageAreaMode === "total" ? "Total coverage area" : "Coverage in current view"}</span><div className="text-sm font-semibold text-white">{areaKm2 >= 1e6 ? `${(areaKm2 / 1e6).toFixed(2)}M km²` : `${Math.round(areaKm2).toLocaleString()} km²`}</div></div>
+          <div className="pointer-events-auto fixed bottom-8 left-1/2 z-[220] box-border w-[min(360px,calc(100vw-1rem))] -translate-x-1/2 rounded-xl border border-cyan-400/30 bg-[#060a14]/95 px-3 py-2 font-mono text-[9px] text-cyan-100 shadow-xl backdrop-blur-xl sm:bottom-9">
+            <div className="flex min-w-0 items-center justify-between gap-2"><span className="truncate text-[9px] uppercase tracking-widest text-cyan-300">Ground coverage Â· {selectedSat.name}</span><span className="shrink-0 text-[8px] text-zinc-500">ESTIMATE</span></div>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              <div><span className="text-zinc-500">{coverageAreaMode === "total" ? "Total coverage area" : "Coverage in current view"}</span><div className="text-sm font-semibold text-white">{areaKm2 >= 1e6 ? `${(areaKm2 / 1e6).toFixed(2)}M kmÂ²` : `${Math.round(areaKm2).toLocaleString()} kmÂ²`}</div></div>
               <div><span className="text-zinc-500">Footprint radius</span><div className="text-sm font-semibold text-white">{Math.round(coverage.radiusKm).toLocaleString()} km</div></div>
             </div>
-            <div className="mt-2 border-t border-white/10 pt-2 text-[9px] leading-relaxed text-zinc-400">
-              <div><span className="mr-1.5 inline-block h-2 w-2 rounded-sm bg-cyan-300/70 align-middle" />Cyan cone: selected satellite&apos;s estimated ground coverage</div>
-              <div className="mt-1">Dotted edge: 10° minimum elevation · altitude {Math.round(selectedSat.alt).toLocaleString()} km</div>
+            <div className="mt-1.5 border-t border-white/10 pt-1.5 text-[8px] leading-snug text-zinc-400">
+              <div><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-cyan-300/70 align-middle" />Estimated coverage Â· 10Â° elevation edge Â· {Math.round(selectedSat.alt).toLocaleString()} km altitude</div>
             </div>
-            <div className="mt-2 flex justify-end"><button type="button" onClick={() => setCoverageAreaMode(mode => mode === "total" ? "view" : "total")} className="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[9px] font-semibold text-cyan-200 hover:bg-cyan-400/20">Show {coverageAreaMode === "total" ? "current viewing area" : "total coverage area"}</button></div>
+            <div className="mt-1.5 flex justify-end"><button type="button" onClick={() => setCoverageAreaMode(mode => mode === "total" ? "view" : "total")} className="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[8px] font-semibold text-cyan-200 hover:bg-cyan-400/20">Show {coverageAreaMode === "total" ? "current viewing area" : "total coverage area"}</button></div>
           </div>
         );
       })()}

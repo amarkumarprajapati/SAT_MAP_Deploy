@@ -53,7 +53,7 @@ def _filter_ships(
     center: dict | None = None,
     max_ships: int = 2500,
 ) -> list[dict]:
-    """Filter a ship list by type and optional bounding box, prioritizing ships closest to the viewport center."""
+    """Filter by viewport and spatially balance snapshots that exceed the client cap."""
     if not include_ships:
         return []
     # Maritime snapshots are viewport scoped. Never fall back to returning the
@@ -102,25 +102,56 @@ def _filter_ships(
 
         filtered = [s for s in filtered if in_view(s)]
 
-    # Prioritize ships closest to the map center so the vessels on the user's screen are sent first
-    if center and "lat" in center and "lng" in center:
+    # Rank ships inside each geographic cell by distance to the viewport center.
+    # A global nearest-to-center cap overrepresents Europe when the world view is
+    # centered there and can discard entire regions such as the Americas.
+    try:
+        c_lat = float(center["lat"]) if center else 0.0
+        c_lng = float(center["lng"]) if center else 0.0
+    except (KeyError, TypeError, ValueError):
+        c_lat, c_lng = 0.0, 0.0
+
+    def dist_sq(s: dict) -> float:
         try:
-            c_lat = float(center["lat"])
-            c_lng = float(center["lng"])
+            dlat = float(s.get("lat")) - c_lat
+            dlng = float(s.get("lng")) - c_lng
+            # Normalize longitude delta across 180 meridian
+            dlng = ((dlng + 180) % 360) - 180
+            return dlat * dlat + dlng * dlng
+        except (TypeError, ValueError):
+            return 999999.0
 
-            def dist_sq(s: dict) -> float:
-                try:
-                    dlat = float(s.get("lat")) - c_lat
-                    dlng = float(s.get("lng")) - c_lng
-                    # Normalize longitude delta across 180 meridian
-                    dlng = ((dlng + 180) % 360) - 180
-                    return dlat * dlat + dlng * dlng
-                except Exception:
-                    return 999999.0
+    if len(filtered) > max_ships:
+        grid: dict[tuple[int, int], list[dict]] = {}
+        for ship in filtered:
+            try:
+                lat = float(ship.get("lat"))
+                lng = float(ship.get("lng"))
+            except (TypeError, ValueError):
+                continue
+            # Ten degree cells cover the globe while keeping enough ships
+            # in each busy area to use the full snapshot budget.
+            cell = (min(17, max(0, int((lat + 90) // 10))), min(35, max(0, int((lng + 180) // 10))))
+            grid.setdefault(cell, []).append(ship)
 
-            filtered.sort(key=dist_sq)
-        except Exception:
-            pass
+        for cell_ships in grid.values():
+            cell_ships.sort(key=dist_sq)
+
+        balanced: list[dict] = []
+        depth = 0
+        cells = list(grid.values())
+        while len(balanced) < max_ships:
+            added_this_round = False
+            for cell_ships in cells:
+                if depth < len(cell_ships):
+                    balanced.append(cell_ships[depth])
+                    added_this_round = True
+                    if len(balanced) == max_ships:
+                        break
+            if not added_this_round:
+                break
+            depth += 1
+        filtered = balanced
 
     # Cap ships returned to prevent browser freezes
     if len(filtered) > max_ships:
