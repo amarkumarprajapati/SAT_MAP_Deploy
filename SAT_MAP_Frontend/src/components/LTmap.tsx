@@ -2398,7 +2398,7 @@ function LTmap({
       map.remove();
       mapRef.current = null;
     };
-  }, [createIcon, setIntelOpen]);
+  }, [setIntelOpen]);
 
   const setGeo = useCallback((source: string, features: unknown[]) => {
     const src = mapRef.current?.getSource(source) as
