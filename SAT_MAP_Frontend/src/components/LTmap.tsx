@@ -1604,7 +1604,6 @@ function LTmap({
 
       const sources = [
         "day-night",
-        "wind",
         "satellites",
         "sat-footprint",
         "maritime",
@@ -1617,7 +1616,6 @@ function LTmap({
       sources.forEach((s) =>
         map.addSource(s, { type: "geojson", data: EMPTY_FC }),
       );
-      map.addSource("wind-flow", { type: "geojson", data: EMPTY_FC, lineMetrics: true });
 
       // Day & Night Solar Shadow layer (fill only, no dividing line)
       map.addLayer({
@@ -1628,61 +1626,6 @@ function LTmap({
         paint: {
           "fill-color": "#020617",
           "fill-opacity": 0.44,
-        },
-      });
-      map.addLayer({
-        id: "viewport-wind-flow-lines",
-        type: "line",
-        source: "wind-flow",
-        minzoom: 4.5,
-        layout: { visibility: "none", "line-cap": "round", "line-join": "round" },
-        paint: {
-          "line-color": "#dff8ff",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4.5, 1.1, 10, 1.8],
-          "line-opacity": ["coalesce", ["get", "opacity"], 0.55],
-          "line-blur": 0.15,
-        },
-      });
-      map.addLayer({
-        id: "viewport-wind-arrows",
-        type: "symbol",
-        source: "wind",
-        minzoom: 4.5,
-        layout: {
-          visibility: "none",
-          "text-field": "↑",
-          "text-font": ["Open Sans Bold"],
-          "text-size": ["interpolate", ["linear"], ["zoom"], 1, 14, 7, 20],
-          "text-rotate": ["get", "arrowHeading"],
-          "text-rotation-alignment": "map",
-          "text-allow-overlap": true,
-          "text-ignore-placement": true,
-        },
-        paint: {
-          "text-color": "#7dd3fc",
-          "text-halo-color": "#07101d",
-          "text-halo-width": 1.5,
-          "text-halo-blur": 0.5,
-        },
-      });
-      map.addLayer({
-        id: "viewport-wind-speed-labels",
-        type: "symbol",
-        source: "wind",
-        minzoom: 5,
-        layout: {
-          visibility: "none",
-          "text-field": ["concat", ["to-string", ["round", ["get", "speedKnots"]]], " kn"],
-          "text-font": ["Open Sans Regular"],
-          "text-size": 9,
-          "text-offset": [0, 1.35],
-          "text-allow-overlap": true,
-          "text-ignore-placement": true,
-        },
-        paint: {
-          "text-color": "#e0f2fe",
-          "text-halo-color": "#07101d",
-          "text-halo-width": 1.2,
         },
       });
 
@@ -2548,135 +2491,7 @@ function LTmap({
     return () => clearInterval(interval);
   }, [mapReady, activeLayers.day_night, setGeo]);
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!mapReady || !map) return;
-    const syncWindLayer = () => {
-      const visible = Boolean(activeLayers.wind) && map.getZoom() >= 4.5;
-      for (const id of ["viewport-wind-arrows", "viewport-wind-speed-labels"]) {
-        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
-      }
-      const samples = activeLayers.wind && Array.isArray(data.wind_samples)
-        ? data.wind_samples as Array<Record<string, unknown>>
-        : [];
-      setGeo("wind", samples.map((sample) => {
-      const directionDeg = Number(sample.directionDeg);
-      return {
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [Number(sample.lng), Number(sample.lat)] },
-        properties: {
-          speedKnots: Number(sample.speedKnots),
-          directionDeg,
-          arrowHeading: (directionDeg + 180) % 360,
-        },
-      };
-      }).filter((feature) => feature.geometry.coordinates.every(Number.isFinite) && Number.isFinite(feature.properties.directionDeg) && Number.isFinite(feature.properties.speedKnots)));
-    };
-    syncWindLayer();
-    map.on("zoomend", syncWindLayer);
-    return () => { map.off("zoomend", syncWindLayer); };
-  }, [mapReady, activeLayers.wind, data.wind_samples, setGeo]);
 
-  // Animate wind particles as geographic lines so they pan and zoom with the map.
-  useEffect(() => {
-    const map = mapRef.current;
-    const samples = Array.isArray(data.wind_samples) ? data.wind_samples as Array<Record<string, unknown>> : [];
-    const source = map?.getSource("wind-flow") as maplibregl.GeoJSONSource | undefined;
-    const flowLayerId = "viewport-wind-flow-lines";
-    if (!mapReady || !map || !source || !activeLayers.wind || !samples.length) {
-      if (map?.getLayer(flowLayerId)) map.setLayoutProperty(flowLayerId, "visibility", "none");
-      source?.setData(EMPTY_FC);
-      return;
-    }
-
-    type WindParticle = { lng: number; lat: number; age: number; maxAge: number; knots: number; trail: [number, number][] };
-    const validSamples = samples.map((sample) => ({
-      lat: Number(sample.lat),
-      lng: Number(sample.lng),
-      speed: Number(sample.speedKnots),
-      direction: Number(sample.directionDeg),
-    })).filter((sample) => Number.isFinite(sample.lat) && Number.isFinite(sample.lng) && Number.isFinite(sample.speed) && Number.isFinite(sample.direction));
-    if (!validSamples.length) return;
-
-    const bounds = map.getBounds();
-    const randomPoint = (): [number, number] => {
-      const lat = bounds.getSouth() + Math.random() * (bounds.getNorth() - bounds.getSouth());
-      const west = bounds.getWest();
-      const east = bounds.getEast();
-      let lng = west + Math.random() * (east - west);
-      lng = ((lng + 180) % 360 + 360) % 360 - 180;
-      return [lng, lat];
-    };
-    const makeParticle = (): WindParticle => {
-      const [lng, lat] = randomPoint();
-      return { lng, lat, age: Math.random() * 2.5, maxAge: 2 + Math.random() * 2.5, knots: 0, trail: [[lng, lat]] };
-    };
-    const particles = Array.from({ length: 150 }, makeParticle);
-    if (map.getLayer(flowLayerId)) map.setLayoutProperty(flowLayerId, "visibility", "visible");
-    let previousAt = performance.now();
-    const interval = window.setInterval(() => {
-      const now = performance.now();
-      const deltaSeconds = Math.min(0.2, (now - previousAt) / 1000);
-      previousAt = now;
-      const viewport = map.getBounds();
-      const features = [] as Array<GeoJSON.Feature<GeoJSON.LineString>>;
-      const metersPerLatitudeDegree = 111_320;
-
-      for (const particle of particles) {
-        const nearby = validSamples
-          .map((sample) => {
-            const dx = ((sample.lng - particle.lng + 540) % 360) - 180;
-            const dy = sample.lat - particle.lat;
-            const eastScaled = dx * Math.cos((particle.lat * Math.PI) / 180);
-            return { sample, distance: eastScaled * eastScaled + dy * dy };
-          })
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, 4);
-        let totalWeight = 0;
-        let eastFlow = 0;
-        let northFlow = 0;
-        let averageKnots = 0;
-        for (const entry of nearby) {
-          const weight = 1 / (0.01 + entry.distance);
-          const flowRadians = ((entry.sample.direction + 180) * Math.PI) / 180;
-          totalWeight += weight;
-          eastFlow += Math.sin(flowRadians) * weight;
-          northFlow += Math.cos(flowRadians) * weight;
-          averageKnots += entry.sample.speed * weight;
-        }
-        if (totalWeight) {
-          const knots = averageKnots / totalWeight;
-          const metersPerSecond = knots * 0.514444 * 150; // Exaggerated visually; geographic movement stays map-anchored.
-          const latitudeRadians = (particle.lat * Math.PI) / 180;
-          particle.lng += (eastFlow / totalWeight) * metersPerSecond * deltaSeconds / (metersPerLatitudeDegree * Math.max(0.12, Math.cos(latitudeRadians)));
-          particle.lat += (northFlow / totalWeight) * metersPerSecond * deltaSeconds / metersPerLatitudeDegree;
-          particle.knots = knots;
-        }
-        particle.age += deltaSeconds;
-        particle.trail.push([particle.lng, particle.lat]);
-        if (particle.trail.length > 7) particle.trail.shift();
-        const visible = viewport.contains([particle.lng, particle.lat]);
-        if (!visible || particle.age >= particle.maxAge || particle.lat < -84 || particle.lat > 84) {
-          Object.assign(particle, makeParticle());
-          continue;
-        }
-        if (particle.trail.length > 1) {
-          features.push({
-            type: "Feature",
-            properties: { speedKnots: particle.knots, opacity: Math.min(0.72, 0.2 + particle.trail.length * 0.075) },
-            geometry: { type: "LineString", coordinates: particle.trail },
-          });
-        }
-      }
-      source.setData({ type: "FeatureCollection", features });
-    }, 80);
-
-    return () => {
-      window.clearInterval(interval);
-      if (map.getLayer(flowLayerId)) map.setLayoutProperty(flowLayerId, "visibility", "none");
-      source.setData(EMPTY_FC);
-    };
-  }, [mapReady, activeLayers.wind, data.wind_samples]);
 
   // Draw real, heading-oriented vessel silhouettes in a lightweight 2D canvas.
   // This bypasses MapLibre's sprite atlas and font glyphs for the main ship layer.
@@ -2696,15 +2511,24 @@ function LTmap({
     container.appendChild(canvas);
     shipMarkerCanvasRef.current = canvas;
 
-    // Lucide React's Ship icon paths, drawn on one canvas to avoid a separate
-    // DOM/SVG node for every vessel.
-    const shipIconPaths = [
-      new Path2D("M12 10.189V14"),
-      new Path2D("M12 2v3"),
-      new Path2D("M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"),
-      new Path2D("M19.38 20A11.6 11.6 0 0 0 21 14l-8.188-3.639a2 2 0 0 0-1.624 0L3 14a11.6 11.6 0 0 0 2.81 7.76"),
-      new Path2D("M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1s1.2 1 2.5 1c2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"),
-    ];
+    // Clean vessel arrow silhouette drawn in a 0–24 coordinate box.
+    const drawShipShape = (ctx: CanvasRenderingContext2D, color: string, sz: number) => {
+      // Simple filled triangle pointing up (bow at top)
+      ctx.beginPath();
+      ctx.moveTo(0, -10 * sz);   // bow (top)
+      ctx.lineTo(6 * sz, 8 * sz);  // starboard stern
+      ctx.lineTo(0, 5 * sz);      // center notch
+      ctx.lineTo(-6 * sz, 8 * sz); // port stern
+      ctx.closePath();
+      // Fill with color
+      ctx.fillStyle = color;
+      ctx.fill();
+      // Thin outline
+      ctx.strokeStyle = "#e8fbff";
+      ctx.lineWidth = 0.6;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+    };
 
     const draw = () => {
       const ctx = canvas.getContext("2d");
@@ -2720,7 +2544,7 @@ function LTmap({
       ctx.clearRect(0, 0, width, height);
 
       const zoom = map.getZoom();
-      const size = Math.max(0.9, Math.min(1.5, 0.82 + zoom * 0.1));
+      const size = Math.max(0.5, Math.min(1.3, 0.4 + zoom * 0.08));
       for (const ship of shipMarkerRowsRef.current) {
         const lat = Number(ship.lat);
         const lng = Number(ship.lng);
@@ -2734,20 +2558,11 @@ function LTmap({
         ctx.save();
         ctx.translate(point.x, point.y);
         if (Number.isFinite(heading)) ctx.rotate((heading * Math.PI) / 180);
-        ctx.scale(size, size);
-        ctx.translate(-12, -12);
-
+        // Subtle glow
         ctx.shadowColor = color;
-        ctx.shadowBlur = 7;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2.7;
-        for (const path of shipIconPaths) ctx.stroke(path);
+        ctx.shadowBlur = 4;
+        drawShipShape(ctx, color, size);
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = "#e8fbff";
-        ctx.lineWidth = 1.45;
-        for (const path of shipIconPaths) ctx.stroke(path);
         ctx.restore();
       }
     };

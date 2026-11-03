@@ -35,7 +35,6 @@ import {
   Newspaper,
   Film,
   ScanLine,
-  Wind as WindIcon,
 } from "lucide-react";
 import ScaleBar from "@/components/ScaleBar";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -51,19 +50,6 @@ import { pickLandingCity } from "@/lib/landing-cities";
 import { LocationTimeInfo, formatTimeInZone } from "@/lib/country-time";
 import type { SatelliteDetail } from "@/components/SatelliteCard";
 import { API_ENDPOINTS, api, apiClient, getApiUrl } from "@/config/api";
-
-interface WindViewportData {
-  provider: string;
-  timestamp: string | null;
-  sampleCount: number;
-  meanSpeedKnots: number;
-  meanDirectionDeg: number;
-  samples: Array<{ lat: number; lng: number; speedKnots: number; directionDeg: number; time?: string | null }>;
-}
-
-function compassPoint(degrees: number): string {
-  return ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(degrees / 45) % 8];
-}
 
 const HeaderClock = ({
   countryTime,
@@ -410,8 +396,6 @@ export default function Dashboard() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [totalShips, setTotalShips] = useState<any>(null);
   const [extraData, setExtraData] = useState<Record<string, unknown>>({});
-  const [windViewport, setWindViewport] = useState<WindViewportData | null>(null);
-  const [windLoading, setWindLoading] = useState(false);
 
   const [backendStatus, setBackendStatus] = useState<
     "connecting" | "connected" | "error"
@@ -578,7 +562,6 @@ export default function Dashboard() {
     balloons: false,
     radiation: false,
     live_clouds: false,
-    wind: false,
     day_night: false,
   });
 
@@ -912,42 +895,6 @@ export default function Dashboard() {
     mapCenter,
   ]);
 
-  useEffect(() => {
-    const bounds = mapCenter?.bounds;
-    if (!activeLayers.wind) {
-      setWindViewport(null);
-      setWindLoading(false);
-      return;
-    }
-    if (!bounds || (mapCenter?.zoom ?? 0) < 4.5) {
-      setWindLoading(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    setWindLoading(true);
-    const loadWind = async () => {
-      try {
-        const response = await fetch(api.wind(bounds, mapCenter?.zoom ?? 0), { signal: controller.signal, cache: "no-store" });
-        if (!response.ok) throw new Error(`Wind service returned ${response.status}`);
-        const data = await response.json() as WindViewportData;
-        if (!controller.signal.aborted) setWindViewport(data);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          console.warn("[L&T] Wind data request failed:", error instanceof Error ? error.message : error);
-        }
-      } finally {
-        if (!controller.signal.aborted) setWindLoading(false);
-      }
-    };
-    const debounce = window.setTimeout(() => void loadWind(), 350);
-    const refresh = window.setInterval(() => void loadWind(), 300_000);
-    return () => {
-      controller.abort();
-      window.clearTimeout(debounce);
-      window.clearInterval(refresh);
-    };
-  }, [activeLayers.wind, mapCenter?.zoom, mapCenter?.bounds?.west, mapCenter?.bounds?.south, mapCenter?.bounds?.east, mapCenter?.bounds?.north]);
 
   // Maritime filters & WebSocket synchronization
   const sendMaritimeWsFilters = useCallback(() => {
@@ -1211,8 +1158,6 @@ export default function Dashboard() {
       maritime_chokepoints: maritimeChokepoints,
       category_counts: categoryCounts,
       total_ships: totalShips,
-      wind_samples: windViewport?.samples ?? [],
-      wind_summary: windViewport,
       ...extraData,
     }),
     [
@@ -1225,7 +1170,6 @@ export default function Dashboard() {
       maritimeChokepoints,
       categoryCounts,
       totalShips,
-      windViewport,
       extraData,
     ],
   );
@@ -1927,12 +1871,6 @@ export default function Dashboard() {
 
           <div className="w-px h-4 bg-white/20 hidden md:block flex-shrink-0" />
 
-          {activeLayers.wind && (
-            <div className="hidden lg:flex items-center gap-1.5 border-l border-white/15 pl-2 text-[9px] font-mono tracking-wide text-sky-200 whitespace-nowrap" title={windViewport ? `Open-Meteo 10 m viewport average · ${windViewport.sampleCount} samples · ${windViewport.timestamp ?? "current model data"}` : "Loading 10 m wind for the current viewport"}>
-              <WindIcon size={14} className="text-sky-300" />
-              {(mapCenter?.zoom ?? 0) < 4.5 ? <span>ZOOM IN FOR WIND</span> : windViewport ? <span>WIND {windViewport.meanSpeedKnots.toFixed(1)} kn · FROM {windViewport.meanDirectionDeg}° {compassPoint(windViewport.meanDirectionDeg)}</span> : <span>{windLoading ? "WIND LOADING" : "WIND UNAVAILABLE"}</span>}
-            </div>
-          )}
 
           {/* Telemetry Badge / Local Clock */}
           <div className="flex items-center min-w-0">
