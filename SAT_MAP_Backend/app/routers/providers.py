@@ -26,44 +26,9 @@ _map_style_cache: dict | None = None
 _map_style_cached_at = 0.0
 _map_style_cache_lock = asyncio.Lock()
 MAP_STYLE_CACHE_TTL = 86_400
-_wind_cache: dict | None = None
-_wind_cached_at = 0.0
 
 
-@router.get("/weather/wind-data")
-async def wind_data(west: float = Query(..., ge=-180, le=180), south: float = Query(..., ge=-85, le=85), east: float = Query(..., ge=-180, le=180), north: float = Query(..., ge=-85, le=85)):
-    """Return a coarse regional vector grid sampled from Open-Meteo observations."""
-    global _wind_cache, _wind_cached_at
-    bounds_key = (round(west, 1), round(south, 1), round(east, 1), round(north, 1))
-    if _wind_cache is not None and _wind_cache.get("bounds") == bounds_key and time.time() - _wind_cached_at < 900:
-        return _wind_cache
-    nx, ny = 12, 8
-    dx, dy = (east - west) / (nx - 1), (north - south) / (ny - 1)
-    latitudes = [north - row * dy for row in range(ny) for _ in range(nx)]
-    longitudes = [west + col * dx for _ in range(ny) for col in range(nx)]
-    params = urlencode({"latitude": ",".join(f"{x:.3f}" for x in latitudes), "longitude": ",".join(f"{x:.3f}" for x in longitudes), "current": "wind_speed_10m,wind_direction_10m", "wind_speed_unit": "ms"})
-    response = await _get(f"https://api.open-meteo.com/v1/forecast?{params}")
-    try:
-        payload = response.json()
-        if not isinstance(payload, list) or len(payload) != nx * ny:
-            raise ValueError("Provider did not return all grid points")
-        observations = [(float(item["current"]["wind_speed_10m"]), math.radians(float(item["current"]["wind_direction_10m"]))) for item in payload]
-    except (KeyError, IndexError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail="Invalid wind data from provider") from exc
-    u_values: list[float] = []
-    v_values: list[float] = []
-    for speed, direction in observations:
-        u_values.append(-speed * math.sin(direction))
-        v_values.append(-speed * math.cos(direction))
-    _wind_cache = {
-        "bounds": bounds_key,
-        "header": {"nx": nx, "ny": ny, "lo1": west, "la1": north, "dx": dx, "dy": dy, "refTime": payload[0]["current"]["time"], "parameterUnit": "m/s"},
-        "u": u_values,
-        "v": v_values,
-        "source": "Open-Meteo current 10 m wind",
-    }
-    _wind_cached_at = time.time()
-    return _wind_cache
+
 
 
 async def open_client() -> None:
