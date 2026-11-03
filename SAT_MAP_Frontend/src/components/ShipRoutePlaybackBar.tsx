@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pause, Play, RotateCcw, Route } from "lucide-react";
+import { Pause, Play, RotateCcw, Route, X } from "lucide-react";
 
 type TrackPoint = { lat: number; lng: number; timestamp?: number };
 
-export default function ShipRoutePlaybackBar({ ship }: { ship: Record<string, unknown> }) {
+export default function ShipRoutePlaybackBar({ ship, onClose }: { ship: Record<string, unknown>; onClose: () => void }) {
   const route = useMemo(() => (Array.isArray(ship.track) ? ship.track : []).map((point) => ({ lat: Number(point.lat), lng: Number(point.lng), timestamp: Number(point.timestamp) })).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)), [ship.track]) as TrackPoint[];
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -97,10 +97,15 @@ export default function ShipRoutePlaybackBar({ ship }: { ship: Record<string, un
             <div className="font-mono text-[8px] text-zinc-500">{category.toUpperCase()} · {route.length} AIS FIXES</div>
           </div>
         </div>
-        <button type="button" onClick={togglePlay} disabled={route.length < 2} className="flex h-9 shrink-0 items-center gap-2 rounded-lg border border-cyan-300/50 bg-cyan-300 px-3 font-mono text-[10px] font-extrabold text-slate-950 shadow-[0_0_14px_rgba(0,229,255,.24)] transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-45" aria-label={playing ? "Pause vessel route playback" : "Play vessel route from start to endpoint"} title={playing ? "Pause route playback" : route.length < 2 ? "No historical route fixes available" : "Play route from start to endpoint"}>
-          {playing ? <Pause size={14} fill="currentColor" /> : progress >= 1 ? <RotateCcw size={14} /> : <Play size={14} fill="currentColor" />}
-          <span>{playing ? "PAUSE" : route.length < 2 ? "NO TRACK" : progress >= 1 ? "REPLAY" : "PLAY ROUTE"}</span>
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button type="button" onClick={togglePlay} disabled={route.length < 2} className="flex h-9 items-center gap-2 rounded-lg border border-cyan-300/50 bg-cyan-300 px-3 font-mono text-[10px] font-extrabold text-slate-950 shadow-[0_0_14px_rgba(0,229,255,.24)] transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-45" aria-label={playing ? "Pause vessel route playback" : "Play vessel route from start to endpoint"} title={playing ? "Pause route playback" : route.length < 2 ? "No historical route fixes available" : "Play route from start to endpoint"}>
+            {playing ? <Pause size={14} fill="currentColor" /> : progress >= 1 ? <RotateCcw size={14} /> : <Play size={14} fill="currentColor" />}
+            <span>{playing ? "PAUSE" : route.length < 2 ? "NO TRACK" : progress >= 1 ? "REPLAY" : "PLAY ROUTE"}</span>
+          </button>
+          <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-zinc-400 transition hover:border-rose-400/40 hover:bg-rose-400/10 hover:text-rose-300" aria-label="Close route telemetry" title="Close route telemetry">
+            <X size={15} />
+          </button>
+        </div>
       </div>
       <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 font-mono text-[8px]">
         <div className="min-w-0"><div className="font-bold tracking-wider text-emerald-300">START</div><div className="truncate text-zinc-300">{start.lat.toFixed(4)}°, {start.lng.toFixed(4)}°</div></div>

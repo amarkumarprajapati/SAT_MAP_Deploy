@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Ship,
   X,
@@ -12,6 +12,17 @@ import {
 } from "lucide-react";
 import { calculateVoyageDetails, VoyageDetails } from "@/lib/maritime-route";
 import { vesselSizeClass } from "@/lib/vessel-size";
+import { api } from "@/config/api";
+
+interface VesselWikiInfo {
+  found: boolean;
+  available?: boolean;
+  title?: string;
+  description?: string;
+  extract?: string;
+  thumbnailUrl?: string | null;
+  wikiUrl?: string;
+}
 
 interface ShipDetailPanelProps {
   ship: Record<string, unknown>;
@@ -31,6 +42,29 @@ export default function ShipDetailPanel({
 
   const shipName = String(ship.name || "Unidentified Vessel").toUpperCase();
   const mmsi = String(ship.mmsi || ship.id || "—");
+  const rawShipName = String(ship.name || "").trim();
+  const [wikiState, setWikiState] = useState<{ name: string; loading: boolean; data: VesselWikiInfo | null }>({ name: "", loading: false, data: null });
+
+  useEffect(() => {
+    if (!rawShipName) {
+      setWikiState({ name: rawShipName, loading: false, data: null });
+      return;
+    }
+    const controller = new AbortController();
+    setWikiState({ name: rawShipName, loading: true, data: null });
+    fetch(api.vesselInfo(rawShipName), { signal: controller.signal })
+      .then((response) => response.ok ? response.json() as Promise<VesselWikiInfo> : null)
+      .then((data) => {
+        if (!controller.signal.aborted) setWikiState({ name: rawShipName, loading: false, data });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setWikiState({ name: rawShipName, loading: false, data: null });
+      });
+    return () => controller.abort();
+  }, [rawShipName]);
+
+  const wiki = wikiState.name === rawShipName ? wikiState.data : null;
+  const wikiLoading = wikiState.name !== rawShipName || wikiState.loading;
 
   // Accent color by vessel classification
   const accentColor =
@@ -233,6 +267,26 @@ export default function ShipDetailPanel({
             )}
           </div>
         </div>
+
+        <section className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.02]" aria-label="Wikipedia vessel information">
+          <div className="flex items-center justify-between border-b border-white/10 px-2 py-1.5">
+            <span className="font-mono text-[8px] font-bold uppercase tracking-wider text-zinc-400">Wikipedia</span>
+            {wiki?.wikiUrl && <a href={wiki.wikiUrl} target="_blank" rel="noreferrer" className="font-mono text-[8px] text-cyan-300 underline hover:text-cyan-100">OPEN ARTICLE ↗</a>}
+          </div>
+          {wikiLoading ? (
+            <p className="px-2 py-2 text-[9px] text-zinc-500">Looking for a matching vessel article…</p>
+          ) : wiki?.found ? (
+            <div className="p-2">
+              {wiki.thumbnailUrl && <img src={wiki.thumbnailUrl} alt="" className="mb-2 max-h-28 w-full rounded object-cover" loading="lazy" />}
+              <h3 className="font-semibold text-[10px] text-zinc-100">{wiki.title}</h3>
+              {wiki.description && <p className="mt-0.5 text-[9px] text-cyan-200">{wiki.description}</p>}
+              {wiki.extract && <p className="mt-1 whitespace-pre-line text-[9px] leading-relaxed text-zinc-300">{wiki.extract}</p>}
+              <p className="mt-1.5 text-[8px] text-zinc-600">Article summary from Wikipedia</p>
+            </div>
+          ) : (
+            <p className="px-2 py-2 text-[9px] text-zinc-500">{wiki?.available === false ? "Wikipedia is temporarily unavailable." : "No exact matching Wikipedia article found for this vessel."}</p>
+          )}
+        </section>
 
         {/* ── Footer / AIS Source Telemetry ── */}
         <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] text-zinc-500">

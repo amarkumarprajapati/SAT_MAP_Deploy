@@ -1059,6 +1059,7 @@ function LTmap({
     string,
     unknown
   > | null>(null);
+  const [routeTelemetryShip, setRouteTelemetryShip] = useState<Record<string, unknown> | null>(null);
   const [selectedShipCardPosition, setSelectedShipCardPosition] = useState({
     x: 400,
     y: 500,
@@ -1272,15 +1273,18 @@ function LTmap({
     }
   }, [selectedShip]);
   useEffect(() => {
-    if (
-      !liveTrackedShip ||
-      String(liveTrackedShip.mmsi || liveTrackedShip.id || "") !==
-        String(selectedShip?.mmsi || selectedShip?.id || "")
-    )
-      return;
+    if (!liveTrackedShip) return;
+    const liveId = String(liveTrackedShip.mmsi || liveTrackedShip.id || "");
     const t = setTimeout(() => {
       setSelectedShip((prev) => {
-        if (!prev) return prev;
+        if (!prev || String(prev.mmsi || prev.id || "") !== liveId) return prev;
+        const next = { ...prev, ...liveTrackedShip };
+        return Object.keys(next).every((key) => Object.is(next[key], prev[key]))
+          ? prev
+          : next;
+      });
+      setRouteTelemetryShip((prev) => {
+        if (!prev || String(prev.mmsi || prev.id || "") !== liveId) return prev;
         const next = { ...prev, ...liveTrackedShip };
         return Object.keys(next).every((key) => Object.is(next[key], prev[key]))
           ? prev
@@ -1288,7 +1292,7 @@ function LTmap({
       });
     }, 0);
     return () => clearTimeout(t);
-  }, [liveTrackedShip, selectedShip?.mmsi, selectedShip?.id]);
+  }, [liveTrackedShip]);
   const [showVesselsSlider, setShowVesselsSlider] = useState(false);
   const [hoveredSat, setHoveredSat] = useState<{
     name: string;
@@ -3861,6 +3865,7 @@ function LTmap({
       });
       onTrackShip?.(ship.mmsi);
       setSelectedShip(ship as unknown as Record<string, unknown>);
+      setRouteTelemetryShip(ship as unknown as Record<string, unknown>);
     },
     [onTrackShip],
   );
@@ -3897,17 +3902,19 @@ function LTmap({
           onClose={() => {
             setSelectedShip(null);
             onShipSelect?.(null);
-            onTrackShip?.(null);
           }}
         />
       )}
-      {selectedShip && <ShipRoutePlaybackBar key={String(selectedShip.mmsi ?? selectedShip.id ?? "ship")} ship={selectedShip} />}
+      {routeTelemetryShip && <ShipRoutePlaybackBar key={String(routeTelemetryShip.mmsi ?? routeTelemetryShip.id ?? "ship")} ship={routeTelemetryShip} onClose={() => setRouteTelemetryShip(null)} />}
       {mapReady && (
         <MapPopups
           mapRef={mapRef}
           popupRef={popupRef}
           onTrackShip={onTrackShip}
-          onShipSelect={(ship) => setSelectedShip(ship)}
+          onShipSelect={(ship) => {
+            setSelectedShip(ship);
+            if (ship) setRouteTelemetryShip(ship);
+          }}
           liveTrackedShip={liveTrackedShip}
         />
       )}

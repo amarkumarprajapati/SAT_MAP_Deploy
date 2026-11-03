@@ -19,6 +19,7 @@ export const API_ENDPOINTS = {
   REGION_DOSSIER: `${API_PREFIX}/region-dossier`,
   STATS: `${API_PREFIX}/stats`,
   SATELLITE_INFO: `${API_PREFIX}/satellite-info`,
+  VESSEL_INFO: `${API_PREFIX}/vessel-info`,
   REVERSE_GEOCODE: `${API_PREFIX}/geocode/reverse`,
   MAP_STYLE: `${API_PREFIX}/map/style`,
   MAP_IMAGERY: `${API_PREFIX}/map/imagery`,
@@ -112,6 +113,8 @@ export const api = {
   newsStream: () => getApiUrl(`${API_PREFIX}/osint/news/stream`),
   satelliteInfo: (name: string) =>
     getApiUrl(`${API_ENDPOINTS.SATELLITE_INFO}?name=${encodeURIComponent(name)}`),
+  vesselInfo: (name: string) =>
+    getApiUrl(`${API_ENDPOINTS.VESSEL_INFO}?name=${encodeURIComponent(name)}`),
   reverseGeocode: (lat: number, lng: number) =>
     getApiUrl(`${API_ENDPOINTS.REVERSE_GEOCODE}?latitude=${lat}&longitude=${lng}`),
   mapCartoAsset: (url: string) =>

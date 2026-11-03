@@ -115,6 +115,47 @@ async def satellite_info(name: str = Query(..., min_length=1, max_length=160)):
     }
 
 
+@router.get("/vessel-info")
+async def vessel_info(name: str = Query(..., min_length=1, max_length=160)):
+    """Return a Wikipedia summary only when its page title matches the vessel name."""
+    clean = re.sub(r"\s+", " ", name).strip()
+    normalized = re.sub(r"[^a-z0-9]", "", clean.casefold())
+    if not normalized:
+        return {"found": False, "available": True}
+
+    try:
+        response = await _get(
+            f"{WIKIPEDIA_API}?action=query&list=search&srwhat=title&srsearch={quote(clean)}&srlimit=5&utf8=1&format=json"
+        )
+        results = response.json().get("query", {}).get("search", [])
+        title = next(
+            (
+                result.get("title", "")
+                for result in results
+                if re.sub(
+                    r"[^a-z0-9]", "",
+                    re.sub(r"\s*\((?:ship|vessel)\)$", "", result.get("title", ""), flags=re.I).casefold(),
+                ) == normalized
+            ),
+            None,
+        )
+        if not title:
+            return {"found": False, "available": True}
+
+        summary = await _get(f"{WIKIPEDIA_SUMMARY}/{quote(title, safe='')}")
+        data = summary.json()
+        payload = _wiki_payload(data, title)
+        if not payload:
+            return {"found": False, "available": True}
+        payload["found"] = True
+        payload["available"] = True
+        payload["description"] = data.get("description") or "Wikipedia article"
+        return payload
+    except (HTTPException, ValueError, TypeError) as exc:
+        logger.info("Wikipedia vessel lookup unavailable for %s: %s", clean, exc)
+        return {"found": False, "available": False}
+
+
 @router.get("/geocode/reverse")
 async def reverse_geocode(
     latitude: float = Query(..., ge=-90, le=90),
