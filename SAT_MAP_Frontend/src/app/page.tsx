@@ -35,6 +35,7 @@ import {
   Newspaper,
   Film,
   ScanLine,
+  Wind,
 } from "lucide-react";
 import ScaleBar from "@/components/ScaleBar";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -563,6 +564,7 @@ export default function Dashboard() {
     radiation: false,
     live_clouds: false,
     day_night: false,
+    wind: false,
   });
 
   const [capabilities] = useState<Record<string, boolean>>({});
@@ -1773,6 +1775,16 @@ export default function Dashboard() {
               ) : (
                 <Moon size={15} />
               )}
+            </button>
+            <button
+              type="button"
+              title={activeLayers.wind ? "Hide wind streamlines" : "Show wind streamlines"}
+              aria-label={activeLayers.wind ? "Hide wind streamlines" : "Show wind streamlines"}
+              aria-pressed={!!activeLayers.wind}
+              onClick={() => setActiveLayers((layers) => ({ ...layers, wind: !layers.wind }))}
+              className={`rounded-md p-1.5 transition-colors hover:bg-white/10 hover:text-emerald-200 ${activeLayers.wind ? "text-emerald-300" : ""}`}
+            >
+              <Wind size={15} />
             </button>
             <button
               type="button"

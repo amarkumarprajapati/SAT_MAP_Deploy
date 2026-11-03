@@ -248,13 +248,14 @@ function buildSatelliteHorizonCone(lng: number, lat: number, alt: number) {
   );
   if (!boundary || boundary.geometry.type !== "LineString") return [];
   const ring = boundary.geometry.coordinates;
-  const satellite = { lng, lat, altKm: alt };
   const groundRing = ring.map(([pointLng, pointLat]) => ({
     lng: pointLng,
     lat: pointLat,
     altKm: 0,
   }));
-  return [[satellite, ...groundRing, groundRing[0]]];
+  // Draw only the ground footprint boundary. Connecting the satellite point to
+  // every perimeter vertex created distracting radial spokes across the map.
+  return [[...groundRing, groundRing[0]]];
 }
 
 function LTmap({
@@ -2492,6 +2493,90 @@ function LTmap({
   }, [mapReady, activeLayers.day_night, setGeo]);
 
 
+  // Wind particles are GeoJSON map features, so MapLibre keeps them attached
+  // to their true geographic positions throughout pan and zoom interactions.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || !activeLayers.wind) return;
+    let alive = true;
+    let frame = 0;
+    let grid: { header: { nx: number; ny: number; lo1: number; la1: number; dx: number; dy: number }; u: number[]; v: number[] } | null = null;
+    let requestVersion = 0;
+    const sourceId = "wind-particle-source";
+    const layerId = "wind-particle-lines";
+    type Particle = { lng: number; lat: number; age: number; trail: [number, number][] };
+    let particles: Particle[] = [];
+    let last = 0;
+    const particleCount = 260;
+    const emptyData: GeoJSON.FeatureCollection<GeoJSON.LineString> = { type: "FeatureCollection", features: [] };
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+    map.addSource(sourceId, { type: "geojson", data: emptyData, lineMetrics: false });
+    const firstSymbol = map.getStyle().layers?.find((layer) => layer.type === "symbol")?.id;
+    map.addLayer({ id: layerId, type: "line", source: sourceId, layout: { "line-cap": "round", "line-join": "round" }, paint: {
+      "line-color": "#c9fff1", "line-width": 0.85, "line-opacity": 0.34,
+      "line-blur": 0.25,
+    } }, firstSymbol);
+    const source = () => map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+    const sample = (lat: number, lng: number) => {
+      if (!grid) return null;
+      const h = grid.header;
+      let col = (lng - h.lo1) / h.dx;
+      while (col < 0) col += 360 / h.dx;
+      while (col > h.nx - 1) col -= 360 / h.dx;
+      const row = (h.la1 - lat) / h.dy;
+      if (row < 0 || row > h.ny - 1 || col < 0 || col > h.nx - 1) return null;
+      const x0 = Math.floor(col), y0 = Math.floor(row), x1 = Math.min(h.nx - 1, x0 + 1), y1 = Math.min(h.ny - 1, y0 + 1);
+      const tx = col - x0, ty = row - y0;
+      const interp = (values: number[]) => values[y0 * h.nx + x0] * (1-tx)*(1-ty) + values[y0*h.nx+x1]*tx*(1-ty) + values[y1*h.nx+x0]*(1-tx)*ty + values[y1*h.nx+x1]*tx*ty;
+      return { u: interp(grid.u), v: interp(grid.v) };
+    };
+    const seedParticle = (): Particle => {
+      const h = grid!.header;
+      return { lng: h.lo1 + Math.random() * h.dx * (h.nx - 1), lat: h.la1 - Math.random() * h.dy * (h.ny - 1), age: Math.random() * 70, trail: [] };
+    };
+    const load = async () => {
+      const version = ++requestVersion;
+      const b = map.getBounds();
+      const padLng = Math.max(4, (b.getEast() - b.getWest()) * 0.45);
+      const padLat = Math.max(3, (b.getNorth() - b.getSouth()) * 0.45);
+      const west = Math.max(-180, b.getWest() - padLng), east = Math.min(180, b.getEast() + padLng);
+      const south = Math.max(-84, b.getSouth() - padLat), north = Math.min(84, b.getNorth() + padLat);
+      try {
+        const res = await fetch(api.windData({ west, south, east, north }));
+        if (!res.ok) throw new Error(`Wind service returned ${res.status}`);
+        const value = await res.json();
+        if (alive && version === requestVersion) { grid = value; particles = Array.from({ length: particleCount }, seedParticle); }
+      } catch (error) { console.warn("Wind layer unavailable", error); }
+    };
+    const draw = (time: number) => {
+      if (!alive) return;
+      frame = requestAnimationFrame(draw);
+      if (!grid || time - last < 50) return;
+      last = time;
+      const h = grid.header;
+      for (const p of particles) {
+        const wind = sample(p.lat, p.lng);
+        if (!wind || p.age++ > 70) { Object.assign(p, seedParticle()); continue; }
+        const dt = 0.045;
+        const nextLng = p.lng + (wind.u * dt) / (111_320 * Math.max(0.2, Math.cos(p.lat * Math.PI / 180)));
+        const nextLat = p.lat + (wind.v * dt) / 111_320;
+        p.lng = nextLng;
+        p.lat = Math.max(-84, Math.min(84, nextLat));
+        p.trail.push([p.lng, p.lat]);
+        if (p.trail.length > 7) p.trail.shift();
+        if (p.lng < h.lo1 || p.lng > h.lo1 + h.dx * (h.nx - 1) || p.lat > h.la1 || p.lat < h.la1 - h.dy * (h.ny - 1)) Object.assign(p, seedParticle());
+      }
+      source()?.setData({ type: "FeatureCollection", features: particles.filter((p) => p.trail.length > 1).map((p) => ({ type: "Feature" as const, properties: {}, geometry: { type: "LineString" as const, coordinates: p.trail } })) });
+    };
+    void load();
+    frame = requestAnimationFrame(draw);
+    const onMove = () => { void load(); };
+    map.on("moveend", onMove);
+    return () => { alive = false; requestVersion += 1; cancelAnimationFrame(frame); map.off("moveend", onMove); if (map.getLayer(layerId)) map.removeLayer(layerId); if (map.getSource(sourceId)) map.removeSource(sourceId); };
+  }, [mapReady, activeLayers.wind]);
+
+
 
   // Draw real, heading-oriented vessel silhouettes in a lightweight 2D canvas.
   // This bypasses MapLibre's sprite atlas and font glyphs for the main ship layer.
@@ -3848,6 +3933,13 @@ function LTmap({
         />
       )}
       {mapReady && showMapControls && <MapControls mapRef={mapRef} />}
+      {mapReady && activeLayers.wind && (
+        <div className="pointer-events-none absolute bottom-40 left-4 z-[210] rounded-xl border border-emerald-200/20 bg-slate-950/90 px-3 py-2 text-[10px] text-emerald-50 shadow-lg backdrop-blur-md">
+          <div className="mb-1.5 flex items-center gap-1.5 font-mono font-semibold uppercase tracking-wider"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />Wind · 10 m</div>
+          <div className="h-1.5 w-36 rounded-full bg-gradient-to-r from-sky-400 via-emerald-300 via-yellow-300 to-orange-400" />
+          <div className="mt-1 flex justify-between font-mono text-[9px] text-white/55"><span>0 m/s</span><span>20+ m/s</span></div>
+        </div>
+      )}
       {selectedSat && !isIntelOpen && !showVesselsSlider && (
         <SatelliteCard
           sat={selectedSat}

@@ -3,7 +3,7 @@
 import { memo, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Satellite, Ship, SunMoon,
+  Satellite, Ship, SunMoon, Wind,
 } from 'lucide-react';
 
 interface LayerPanelProps {
@@ -24,6 +24,7 @@ interface LayerDef {
   requires?: string;
   parent?: string;
   color?: string;
+  icon?: React.ComponentType<{ size?: number; className?: string; style?: React.CSSProperties }>;
 }
 
 interface LayerGroupDef {
@@ -68,6 +69,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
         description: 'Solar terminator & shadow',
         color: '#F59E0B',
       },
+      { key: 'wind', label: 'Wind streamlines', dataKey: '', description: 'Animated 10 m wind flow · Open-Meteo', color: '#67e8c5', icon: Wind },
     ],
   },
 ];
@@ -223,6 +225,7 @@ function LayerPanel({
                     className={`relative w-full flex items-center gap-3 py-2 rounded-md text-left hover:bg-white/[0.04] transition-colors ${layer.parent ? 'pl-[22px] pr-1' : 'px-1'} ${dormant ? 'opacity-40 pointer-events-none' : ''}`}
                   >
                     {layer.parent && <SubLayerStem />}
+                    {layer.icon && <layer.icon size={14} className="shrink-0" />}
                     <ToggleSwitch active={!!isLayerActive} color={accentColor} />
                     <span
                       className={`text-[11px] font-mono uppercase tracking-wider flex-1 transition-colors ${isLayerActive ? 'text-white/80' : 'text-white/40'}`}
@@ -435,6 +438,7 @@ function LayerPanel({
                             }}
                           >
                             {layer.parent && <SubLayerStem />}
+                            {layer.icon && <layer.icon size={15} className="shrink-0" style={{ color: accentColor }} />}
 
                             {/* Custom Micro Glow Toggle */}
                             <div className="relative flex-shrink-0 w-8 h-4.5 rounded-full transition-colors duration-200 p-0.5 flex items-center"
