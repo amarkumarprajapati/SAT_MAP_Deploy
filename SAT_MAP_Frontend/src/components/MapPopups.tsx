@@ -53,16 +53,6 @@ export interface ShipPopupProps {
   [key: string]: unknown;
 }
 
-export interface FlightPopupProps {
-  callsign?: string;
-  alt?: number;
-  speed_knots?: number;
-  heading?: number;
-  icao24?: string;
-  model?: string;
-  [key: string]: unknown;
-}
-
 export interface PortPopupProps {
   type?: string;
   name?: string;
@@ -197,43 +187,7 @@ export function renderShipPopup(
 }
 
 /**
- * 2. Military Aircraft Popup
- */
-export function renderFlightPopup(
-  p: FlightPopupProps,
-  coords: [number, number],
-): string {
-  const cs = (p.callsign || "").trim();
-  const alt = p.alt ? `${Math.round(p.alt)} m` : "—";
-  const speed = p.speed_knots ? `${p.speed_knots} kt` : "—";
-  const heading = p.heading != null ? `${Math.round(p.heading)}°` : "—";
-
-  return `
-  <div style="${BASE_POPUP_STYLE} border: 1px solid #FF174460; border-top: 3px solid #FF1744; min-width: 290px; box-shadow: 0 20px 45px -10px rgba(0,0,0,0.85), 0 0 20px #FF174420;">
-    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #FF174440;padding-bottom:8px;margin-bottom:10px;">
-      <div style="color:#FF1744;font-size:11px;font-weight:800;letter-spacing:0.1em;display:flex;align-items:center;gap:5px;">
-        <span>✈️</span> [ MILITARY AIRCRAFT ]
-      </div>
-      <div style="color:#94a3b8;font-size:9px;font-weight:600;">ICAO: ${htmlEsc(p.icao24 || "")}</div>
-    </div>
-
-    <div style="color:#ffffff;font-size:14px;font-weight:800;margin-bottom:10px;letter-spacing:0.04em;">
-      ${htmlEsc(cs || "UNKNOWN CALLSIGN")}
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;background:rgba(15,23,42,0.7);padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);">
-      <div><span style="color:#64748b;font-size:8px;font-weight:600;">ALTITUDE</span><br/><span style="color:#FF1744;font-size:11px;font-weight:700;">${alt}</span></div>
-      <div><span style="color:#64748b;font-size:8px;font-weight:600;">SPEED</span><br/><span style="color:#FF1744;font-size:11px;font-weight:700;">${speed}</span></div>
-      <div><span style="color:#64748b;font-size:8px;font-weight:600;">HEADING</span><br/><span style="color:#f1f5f9;font-size:11px;font-weight:700;">${heading}</span></div>
-      <div><span style="color:#64748b;font-size:8px;font-weight:600;">MODEL / TYPE</span><br/><span style="color:#38bdf8;font-size:10px;font-weight:600;">${htmlEsc(p.model || "MIL-SPEC")}</span></div>
-      <div><span style="color:#64748b;font-size:8px;font-weight:600;">LATITUDE</span><br/><span style="color:#e2e8f0;font-size:10px;">${coords[1].toFixed(4)}°</span></div>
-      <div><span style="color:#64748b;font-size:8px;font-weight:600;">LONGITUDE</span><br/><span style="color:#e2e8f0;font-size:10px;">${coords[0].toFixed(4)}°</span></div>
-    </div>
-  </div>`;
-}
-
-/**
- * 3. Maritime Port & Naval Base Popup
+ * Maritime Port & Naval Base Popup
  */
 export function renderPortPopup(p: PortPopupProps): string {
   const isNaval = p.type === "naval";
@@ -422,7 +376,6 @@ export function MapPopups({
     if (!map) return;
 
     const interactiveLayers = [
-      "fl-military",
       "ship-dots",
       "ship-label",
       "sat-ship-in-view-ring",
@@ -442,19 +395,7 @@ export function MapPopups({
       map.on("mouseleave", layer, onMouseLeave);
     });
 
-    // 1. Military aircraft click
-    const onFlightClick = (e: maplibregl.MapLayerMouseEvent) => {
-      if (!e.features?.length) return;
-      const p = (e.features[0].properties || {}) as FlightPopupProps;
-      const coords = (e.features[0].geometry as GeoJSON.Point).coordinates as [
-        number,
-        number,
-      ];
-      showMapPopup(map, popupRef, coords, renderFlightPopup(p, coords));
-    };
-    map.on("click", "fl-military", onFlightClick);
-
-    // 2. Maritime ships click (focuses and tracks via WebSocket on-demand)
+    // Maritime ships click (focuses and tracks the selected vessel)
     const onShipClick = (e: maplibregl.MapLayerMouseEvent) => {
       if (!e.features?.length) return;
       const p = { ...(e.features[0].properties as unknown as ShipPopupProps) };
@@ -524,7 +465,6 @@ export function MapPopups({
         map.off("mouseenter", layer, onMouseEnter);
         map.off("mouseleave", layer, onMouseLeave);
       });
-      map.off("click", "fl-military", onFlightClick);
       map.off("click", "ship-dots", onShipClick);
       map.off("click", "sat-ship-in-view-ring", onShipClick);
       map.off("click", "selected-ship-vessel", onShipClick);

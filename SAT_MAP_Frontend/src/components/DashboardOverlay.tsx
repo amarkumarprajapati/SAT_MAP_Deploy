@@ -2,18 +2,8 @@
 
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Activity, ArrowLeft, Database, LayoutDashboard, MapPin, Plane, Radio, Search, Satellite, Ship, X } from 'lucide-react';
+import { Activity, ArrowLeft, Database, LayoutDashboard, MapPin, Radio, Search, Satellite, Ship, X } from 'lucide-react';
 import ReusableTable from '@/components/ReusableTable';
-
-interface FlightRecord {
-  icao24?: string;
-  callsign?: string;
-  model?: string;
-  lat?: number;
-  lng?: number;
-  alt?: number;
-  speed_knots?: number;
-}
 
 interface SatelliteRecord {
   noradId?: string;
@@ -51,37 +41,24 @@ interface DashboardOverlayProps {
   onToggleLayer: (key: string) => void;
   onTabChange: (tab: TabType) => void;
   data: {
-    military_flights?: FlightRecord[];
     satellites?: SatelliteRecord[];
     maritime_ships?: MaritimeRecord[];
     [key: string]: unknown;
   };
 }
 
-type TabType = 'aviation' | 'satellites' | 'maritime';
+type TabType = 'satellites' | 'maritime';
 const tabs = [
-  { id: 'aviation' as const, label: 'Aviation', Icon: Plane },
   { id: 'satellites' as const, label: 'Satellites', Icon: Satellite },
   { id: 'maritime' as const, label: 'Maritime', Icon: Ship },
 ];
 const coord = (value: number | undefined) => Number.isFinite(value) ? Number(value).toFixed(4) : '—';
 
 export default function DashboardOverlay({ onClose, data, activeLayers, onToggleLayer, onTabChange }: DashboardOverlayProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('aviation');
+  const [activeTab, setActiveTab] = useState<TabType>('satellites');
   const [query, setQuery] = useState('');
 
   const tableData = useMemo<TableRowData[]>(() => {
-    if (activeTab === 'aviation') {
-      return (data.military_flights ?? []).map((flight, index) => ({
-        id: flight.icao24 || flight.callsign || `flight-${index}`,
-        name: flight.callsign?.trim() || flight.icao24?.toUpperCase() || 'Unknown aircraft',
-        type: flight.model || 'Military aircraft',
-        lat: coord(flight.lat),
-        lng: coord(flight.lng),
-        altitude: Number.isFinite(flight.alt) ? `${Math.round(flight.alt!)} ft` : '—',
-        speed: Number.isFinite(flight.speed_knots) ? `${Math.round(flight.speed_knots!)} kt` : '—',
-      }));
-    }
     if (activeTab === 'satellites') {
       return (data.satellites ?? []).map((satellite, index) => ({
         id: satellite.noradId || `sat-${index}`,
@@ -126,7 +103,7 @@ export default function DashboardOverlay({ onClose, data, activeLayers, onToggle
     { title: 'VELOCITY', dataIndex: 'speed', key: 'speed', width: 135, align: 'right' as const, render: (value: string) => <span className="font-mono font-semibold tabular-nums text-emerald-300">{value}</span> },
   ], []);
 
-  const activeLabel = tabs.find(tab => tab.id === activeTab)?.label ?? 'Aviation';
+  const activeLabel = tabs.find(tab => tab.id === activeTab)?.label ?? 'Satellites';
 
   return (
     <motion.div
@@ -144,7 +121,7 @@ export default function DashboardOverlay({ onClose, data, activeLayers, onToggle
 
         <nav aria-label="Dashboard data types" className="flex gap-2 overflow-x-auto px-3 pb-3 md:flex-1 md:flex-col md:gap-1 md:px-3 md:pb-0">
           {tabs.map(({ id, label, Icon }) => {
-            const count = id === 'aviation' ? data.military_flights?.length ?? 0 : id === 'satellites' ? data.satellites?.length ?? 0 : data.maritime_ships?.length ?? 0;
+            const count = id === 'satellites' ? data.satellites?.length ?? 0 : data.maritime_ships?.length ?? 0;
             const selected = activeTab === id;
             return <button key={id} onClick={() => { setActiveTab(id); setQuery(''); onTabChange(id); }} aria-current={selected ? 'page' : undefined} className={`flex min-w-max items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition md:w-full md:px-3 md:py-3 ${selected ? 'border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-200 shadow-[inset_2px_0_0_#22d3ee]' : 'border-transparent text-zinc-400 hover:border-white/[0.06] hover:bg-white/[0.035] hover:text-zinc-100'}`}>
               <Icon size={16} className={selected ? 'text-cyan-300' : 'text-zinc-500'}/><span className="font-mono text-[10px] font-bold tracking-[0.12em]">{label.toUpperCase()}</span><span className={`ml-auto rounded-md px-1.5 py-0.5 font-mono text-[9px] tabular-nums ${selected ? 'bg-cyan-300/10 text-cyan-200' : 'text-zinc-600'}`}>{count.toLocaleString()}</span>
@@ -163,7 +140,7 @@ export default function DashboardOverlay({ onClose, data, activeLayers, onToggle
         <section className="shrink-0 border-b border-white/[0.07] px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div><div className="mb-2 flex items-center gap-2 text-[9px] font-mono tracking-[0.18em] text-zinc-500"><span>OPERATIONS</span><span className="text-zinc-700">/</span><span className="text-cyan-300/80">{activeLabel.toUpperCase()}</span></div><div className="flex flex-wrap items-center gap-3"><h1 className="font-mono text-xl font-bold tracking-[0.1em] text-white sm:text-2xl">{activeLabel.toUpperCase()} <span className="text-zinc-500">DATA</span></h1><span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-400/[0.07] px-2 py-1 font-mono text-[9px] font-bold tracking-[0.1em] text-emerald-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400"/>LIVE</span></div></div>
-            <div className="font-mono text-[10px] tracking-[0.1em] text-zinc-500">FEED <span className="ml-1 text-zinc-300">{activeTab === 'aviation' ? 'MILITARY AIR TRACKS' : activeTab === 'satellites' ? 'ORBITAL OBJECTS' : 'AIS VESSEL TRACKS'}</span></div>
+            <div className="font-mono text-[10px] tracking-[0.1em] text-zinc-500">FEED <span className="ml-1 text-zinc-300">{activeTab === 'satellites' ? 'ORBITAL OBJECTS' : 'AIS VESSEL TRACKS'}</span></div>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -202,7 +179,7 @@ export default function DashboardOverlay({ onClose, data, activeLayers, onToggle
               pagination={{ pageSize: 10, placement: ['bottomEnd'], showSizeChanger: true, pageSizeOptions: [10, 25, 50], showTotal: (total, range) => <span className="font-mono text-[9px] tracking-[0.1em] text-zinc-500">{range[0]}–{range[1]} OF {total}</span> }}
             />
           </div>
-          <div className="mt-2 flex items-center justify-between px-1 font-mono text-[9px] tracking-[0.1em] text-zinc-600"><span>DATA SOURCE <span className="text-zinc-400">{activeTab === 'aviation' ? 'MILITARY FLIGHTS' : activeTab === 'satellites' ? 'SATELLITE CATALOG' : 'MARITIME AIS'}</span></span><span>{filteredRows.length.toLocaleString()} SHOWN</span></div>
+          <div className="mt-2 flex items-center justify-between px-1 font-mono text-[9px] tracking-[0.1em] text-zinc-600"><span>DATA SOURCE <span className="text-zinc-400">{activeTab === 'satellites' ? 'SATELLITE CATALOG' : 'MARITIME AIS'}</span></span><span>{filteredRows.length.toLocaleString()} SHOWN</span></div>
         </section>
       </main>
     </motion.div>

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7f8b9e10-c12a-43d5-91e8-ltmap-backend",
     "name": "LTmap Intelligence Backend API",
-    "description": "Postman Collection for the LTmap FastAPI Backend. Contains all production endpoints for OSINT, satellite propagation, military flights, and maritime vessel tracking.",
+    "description": "Postman Collection for the LTmap FastAPI Backend. Contains production endpoints for OSINT, satellite propagation, and maritime vessel tracking.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -50,31 +50,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "stats"]
             },
-            "description": "Aggregates real-time count of active flights, satellites, ships, and global ports."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Air Domain (Flights)",
-      "item": [
-        {
-          "name": "Live Military Flights & Jamming",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/flights",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "flights"]
-            },
-            "description": "Fetches live military aircraft tracking data from adsb.fi with aircraft type classification and GPS jamming heatmap clusters."
+            "description": "Aggregates real-time count of active satellites and AIS ships."
           },
           "response": []
         }

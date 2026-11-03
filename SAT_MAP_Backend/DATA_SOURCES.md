@@ -10,7 +10,6 @@ This document provides a comprehensive technical reference for all external/thir
 | :--------------------------------- | :-------------------------------------------- | :------------------ | :--------------------------------------------------------------------- | :----------------------- | :---------------------------------------------- |
 | **Global Maritime AIS**            | **AISStream** (`aisstream.io`)                | WebSocket (WSS)     | `wss://stream.aisstream.io/v0/stream`                                  | `AIS_API_KEY` (Required) | Real-time push / in-memory buffer (20k vessels) |
 | **Regional Maritime AIS**          | **Fintraffic Digitraffic** (`digitraffic.fi`) | MQTT over WSS (TLS) | `wss://meri.digitraffic.fi:443/mqtt`                                   | None (Free open data)    | Real-time push / merged with AISStream          |
-| **Military Aviation & Jamming**    | **adsb.fi**                                   | HTTPS REST (GET)    | `https://opendata.adsb.fi/api/v2/mil`                                  | None (Public open data)  | 90s server-side memory cache                    |
 | **Satellite TLE (Primary)**        | **CelesTrak** (`celestrak.org`)               | HTTPS REST (GET)    | `https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle` | None                     | 1-hour memory TTL / 4-hour disk cache           |
 | **Satellite TLE (Fallback)**       | **SatNOGS DB** (`satnogs.org`)                | HTTPS REST (GET)    | `https://db.satnogs.org/api/tle/?format=json`                          | None                     | On-demand fallback when CelesTrak fails         |
 | **Reverse Geocoding**              | **Photon by Komoot** (OSM)                    | HTTPS REST (GET)    | `https://photon.komoot.io/reverse`                                     | None                     | 24-hour memory cache                            |
@@ -64,7 +63,6 @@ The backend combines two real-time AIS (Automatic Identification System) feeds t
   - In-memory vessel hash table (`_ships`, up to 20,000 ships) with LRU eviction.
   - **Database Persistence:** Streamed vessels and breadcrumbs are continuously batched into MySQL (`ais_vessels` and `ais_track_points` tables) by `app/services/ais_db.py`. On startup, latest vessel state is restored into cache from the database.
   - **Full WebSocket Feed:** `/api/maritime` pushes real-time full maritime snapshots every 5 seconds (with optional client filtering by type or bounding box).
-  - **Targeted Streaming:** Broadcasts updates over WebSocket (`/api/maritime/stream?mmsi={mmsi}`) so clients can stream specific single vessels they are actively inspecting.
 
 ### 1.2 USCG Vessel Information Verification Service (VIVS)
 
@@ -86,44 +84,7 @@ The backend combines two real-time AIS (Automatic Identification System) feeds t
 
 ---
 
-## 2. Aerial Reconnaissance & Military Flights
-
-### adsb.fi OpenData API
-
-- **Source Service:** adsb.fi Community ADS-B Exchange
-- **Transport / Protocol:** HTTPS GET
-- **Backend Router:** [`app/routers/flights.py`](app/routers/flights.py)
-- **Endpoint URL:** `https://opendata.adsb.fi/api/v2/mil`
-- **Authentication:** None (Open Data)
-- **Request Mechanism:** Executed via stealth HTTP client (`app/utils/stealth_fetch.py`) with rotated modern browser headers to avoid CDN rate-limiting.
-- **Cache Strategy:** 90-second in-memory server cache with `stale-while-revalidate` support.
-- **Incoming Data Fields:**
-  - `hex`: 24-bit ICAO aircraft address (hexadecimal)
-  - `flight`: Callsign transmitted by transponder
-  - `r`: Aircraft registration / tail number
-  - `t`: ICAO aircraft type designator (e.g., `C17`, `P8`, `RC135`, `F35`, `EUFI`, `B52`)
-  - `alt_baro`: Barometric altitude in feet
-  - `gs`: Ground speed in knots
-  - `track`: True track / heading in degrees
-  - `lat` / `lon`: Aircraft position
-  - `squawk`: Transponder 4-digit beacon code
-  - `nac_p`: Navigation Accuracy Category for Position (0 to 11)
-  - `dbFlags`: Database flags (bit 0 = military)
-  - `category_os`: OpenSky category indicator
-- **Internal Processing & Derived Intelligence:**
-  1. **Military Aircraft Filtering & Classification:**
-     - Checks callsign prefixes (`RCH`, `KING`, `DUKE`, `EVAC`, `REACH`, `CONVOY`, etc.)
-     - Checks airframe model lists (Transport, Tanker, AWACS, Reconnaissance, Fighters, Bombers, Attack Helicopters)
-     - Maps aircraft categories into `heli` or `plane`.
-  2. **GPS Jamming & Spoofing Grid:**
-     - Inspects `nac_p` (Navigational Accuracy Category). Values $\le 4$ while cruising above ground indicate degraded satellite positioning (GPS jamming / spoofing).
-     - Aggregates degraded coordinates onto a global 2° $\times$ 2° latitude/longitude spatial grid.
-     - Computes a percentage `severity` score for active conflict zones (e.g. Eastern Mediterranean, Black Sea, Baltic Sea).
-  - Exposed via `/api/flights`.
-
----
-
-## 3. Satellite Tracking & Orbital Mechanics (TLE / SGP4)
+## 2. Satellite Tracking & Orbital Mechanics (TLE / SGP4)
 
 ### 3.1 CelesTrak (`celestrak.org`) — Primary TLE Source
 
@@ -169,7 +130,7 @@ The backend combines two real-time AIS (Automatic Identification System) feeds t
 
 ---
 
-## 4. Geopolitical OSINT & Region Dossiers
+## 3. Geopolitical OSINT & Region Dossiers
 
 When a user clicks or inspects any global coordinate, the backend aggregates data from three open-source knowledge bases into a unified dossier (`/api/region-dossier?lat={lat}&lng={lng}`).
 
@@ -217,7 +178,7 @@ When a user clicks or inspects any global coordinate, the backend aggregates dat
 
 ---
 
-## 5. Environment Variables & Credentials Reference
+## 4. Environment Variables & Credentials Reference
 
 The following environment variables configure external integrations in the repository root `.env`:
 
@@ -225,10 +186,6 @@ The following environment variables configure external integrations in the repos
 # AISStream (Live Global Maritime Ship Tracking)
 # Get a free key at: https://aisstream.io
 AIS_API_KEY=5deb54fff0481c85565cc4ddc9883875500ffc6e
-
-# OpenSky Network (Optional, for higher rate limits on fallback flight queries)
-OPENSKY_CLIENT_ID=
-OPENSKY_CLIENT_SECRET=
 
 # Network & Timeout Configuration
 TIMEOUT_SECONDS=30.0

@@ -1,13 +1,8 @@
 """
-LTmap — Maritime Router
+LTmap maritime router.
 
-Serves live AIS ship positions (from the ais_stream service). Port and
-chokepoint overlays remain empty until a live geographic data source is added.
-
-WebSocket endpoints:
-  /api/maritime             — Full AIS snapshot broadcast (replaces GET polling)
-  /api/maritime/stream         — Focused single-vessel tracking by MMSI
-  /api/maritime/filter-mmsi — Live stream/updates of ais_filter_mmsi records
+The full AIS snapshot is streamed over a viewport-filtered WebSocket. Focused
+vessel tracking and MMSI filter streaming use separate WebSocket endpoints.
 """
 
 import asyncio
@@ -42,6 +37,10 @@ def _filter_ships(
 ) -> list[dict]:
     """Filter a ship list by type and optional bounding box, prioritizing ships closest to the viewport center."""
     if not include_ships:
+        return []
+    # Maritime snapshots are viewport scoped. Never fall back to returning the
+    # complete AIS buffer when a client has not supplied usable bounds.
+    if not bounds:
         return []
 
     # ── type filter ──
@@ -160,6 +159,7 @@ async def maritime_ws(websocket: WebSocket):
     }
 
     filter_changed_event = asyncio.Event()
+    filter_initialized_event = asyncio.Event()
 
     async def _incoming_listener():
         """Listen for filter-change messages from the client."""
@@ -208,6 +208,9 @@ async def maritime_ws(websocket: WebSocket):
                             changed = True
                     if changed:
                         filter_changed_event.set()
+                    # Do not send the global AIS buffer before the client has
+                    # supplied its initial viewport and layer filters.
+                    filter_initialized_event.set()
                 except Exception:
                     pass
         except Exception:
@@ -216,6 +219,7 @@ async def maritime_ws(websocket: WebSocket):
     listener_task = asyncio.create_task(_incoming_listener())
 
     try:
+        await filter_initialized_event.wait()
         while True:
             # Build snapshot
             snapshot = await _build_snapshot(include_ports=filter_state["include_ports"])
@@ -259,60 +263,6 @@ async def maritime_ws(websocket: WebSocket):
     finally:
         listener_task.cancel()
         logger.info("Maritime WebSocket client disconnected")
-
-
-# ── WebSocket: focused single-vessel tracking ──────────────────────────────────
-
-@router.websocket("/stream")
-async def maritime_stream(websocket: WebSocket, mmsi: str | None = None):
-    
-    await websocket.accept()
-    queue = ais_stream.subscribe_ships()
-    tracked_mmsi: str | None = str(mmsi) if mmsi else None
-
-    # If MMSI was requested on connect, send its current snapshot immediately
-    if tracked_mmsi:
-        current = await ais_stream.get_ship(tracked_mmsi)
-        if current:
-            await websocket.send_json({"type": "ship_update", "ship": current})
-
-    async def incoming_listener():
-        nonlocal tracked_mmsi
-        try:
-            while True:
-                data = await websocket.receive_text()
-                try:
-                    msg = json.loads(data)
-                    action = msg.get("action")
-                    if action == "track":
-                        target = msg.get("mmsi")
-                        if target:
-                            tracked_mmsi = str(target)
-                            current = await ais_stream.get_ship(tracked_mmsi)
-                            if current:
-                                await websocket.send_json({"type": "ship_update", "ship": current})
-                    elif action == "untrack":
-                        tracked_mmsi = None
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    listener_task = asyncio.create_task(incoming_listener())
-
-    try:
-        while True:
-            ship = await queue.get()
-            # Only broadcast if this ship matches the tracked MMSI
-            if tracked_mmsi:
-                ship_mmsi = str(ship.get("mmsi") or ship.get("id") or "")
-                if ship_mmsi == tracked_mmsi:
-                    await websocket.send_json({"type": "ship_update", "ship": ship})
-    except (WebSocketDisconnect, RuntimeError):
-        pass
-    finally:
-        listener_task.cancel()
-        ais_stream.unsubscribe_ships(queue)
 
 
 # ── WebSocket: ais_filter_mmsi stream ──────────────────────────────────────────

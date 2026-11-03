@@ -39,11 +39,6 @@
   --map-sat-earth: #90ee90;
   --map-sat-science: #ffd700;
   --map-sat-other: #00e5ff;
-  --map-flight-civil: #00e5ff;
-  --map-flight-private: #ffd700;
-  --map-flight-gov: #ff9500;
-  --map-flight-military: #ff0000;
-  --map-flight-unknown: #546e7a;
 
   /* ── Borders ── */
   --border-primary: rgba(var(--gold-rgb), 0.25);

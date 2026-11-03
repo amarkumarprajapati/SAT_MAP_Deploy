@@ -1,6 +1,6 @@
 # SAT Map (LTMap) — Project Overview
 
-**SAT Map** is a multi-domain geospatial intelligence (GEOINT / OSINT) platform available as both a web application and a standalone Windows desktop app. It aggregates and visualizes real-time tracking for **satellites**, **live commercial & tactical flights**, **maritime vessel movements (AIS)**, and **geocoded OSINT intelligence alerts** onto an interactive 2D/3D tactical map interface.
+**SAT Map** is a multi-domain geospatial intelligence (GEOINT / OSINT) platform available as both a web application and a standalone Windows desktop app. It aggregates and visualizes real-time tracking for **satellites**, **maritime vessel movements (AIS)**, and **geocoded OSINT intelligence alerts** onto an interactive 2D/3D tactical map interface.
 
 ---
 
@@ -50,7 +50,6 @@ The application comprises three core sub-services packaged into a single desktop
 * **Key Modules**:
   * **Satellites**: Automated TLE (Two-Line Element) cache updates and orbit calculations.
   * **Maritime (AIS)**: Live vessel tracking streams via WebSocket feeds (`ais_stream`, `digitraffic_ais`).
-  * **Flights**: Real-time flight tracking aggregator.
   * **Database**: MySQL container for cached snapshot storage and SQL queries.
 * **Default Port**: `8569`
 

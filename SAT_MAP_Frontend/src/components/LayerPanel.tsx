@@ -3,7 +3,7 @@
 import { memo, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plane, Satellite, Ship, SunMoon,
+  Satellite, Ship, SunMoon,
 } from 'lucide-react';
 
 interface LayerPanelProps {
@@ -34,14 +34,6 @@ interface LayerGroupDef {
 }
 
 const LAYER_GROUPS: LayerGroupDef[] = [
-  {
-    label: 'AVIATION',
-    fullLabel: 'AVIATION',
-    icon: Plane,
-    layers: [
-      { key: 'military', label: 'Military', dataKey: 'military_flights' },
-    ],
-  },
   {
     label: 'MARITIME',
     fullLabel: 'MARITIME',

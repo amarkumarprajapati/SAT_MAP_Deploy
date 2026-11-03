@@ -2,7 +2,7 @@
  * L&T — map layer palette.
  *
  * The colours the *map* draws with, as opposed to the chrome around it: camera
- * dots, satellites, aircraft. They live as `--map-*` custom properties beside
+ * dots and satellites. They live as `--map-*` custom properties beside
  * the rest of the design tokens in globals.css and stay readable by the map.
  *
  * Everything here is pure. Reading the properties off the document is the
@@ -17,11 +17,6 @@ export interface MapPalette {
   satEarth: string;
   satScience: string;
   satOther: string;
-  flightCivil: string;
-  flightPrivate: string;
-  flightGov: string;
-  flightMilitary: string;
-  flightUnknown: string;
 }
 
 export type MapPaletteKey = keyof MapPalette;
@@ -35,11 +30,6 @@ export const MAP_VARS: Record<MapPaletteKey, string> = {
   satEarth: '--map-sat-earth',
   satScience: '--map-sat-science',
   satOther: '--map-sat-other',
-  flightCivil: '--map-flight-civil',
-  flightPrivate: '--map-flight-private',
-  flightGov: '--map-flight-gov',
-  flightMilitary: '--map-flight-military',
-  flightUnknown: '--map-flight-unknown',
 };
 
 /**
@@ -57,11 +47,6 @@ export const MAP_DEFAULTS: MapPalette = {
   satEarth: '#90ee90',
   satScience: '#ffd700',
   satOther: '#00e5ff',
-  flightCivil: '#00e5ff',
-  flightPrivate: '#ffd700',
-  flightGov: '#ff9500',
-  flightMilitary: '#ff0000',
-  flightUnknown: '#546e7a',
 };
 
 export const MAP_PALETTE_KEYS = Object.keys(MAP_DEFAULTS) as MapPaletteKey[];
@@ -104,11 +89,9 @@ function canonical(hex: string): string {
 /**
  * Resolve a colour the CSS build may have rewritten.
  *
- * Lightning CSS minifies hex to a keyword wherever that is shorter, so
- * `--map-flight-military: #ff0000` comes back out of getComputedStyle as
- * `red`. Comparing that against the defaults would report the category as
- * customised and quietly discard the mission colours, so the value has to be
- * parsed rather than pattern-matched. A 2d context is the browser's own
+ * Lightning CSS may minify hex colors to shorter keywords. Parse the value
+ * rather than pattern-match it so the comparison stays stable. A 2d context
+ * is the browser's own
  * parser; assigning a colour and reading it back yields `#rrggbb`.
  *
  * Two seeds and an agreement check, because a value the parser rejects leaves

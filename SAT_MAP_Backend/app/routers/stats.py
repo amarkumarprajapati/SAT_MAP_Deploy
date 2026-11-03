@@ -1,8 +1,8 @@
 """
 LTmap — Platform Summary Stats Router
 
-Aggregates counts of active tracked entities (flights, satellites, maritime)
-directly from in-process caches and services without calling external proxies.
+Aggregates counts of active satellites and maritime vessels directly from
+in-process caches and services without calling external proxies.
 Ported from stats/route.ts.
 """
 
@@ -31,17 +31,13 @@ async def _compute_stats() -> dict[str, int]:
     # 2. Maritime count (live AIS ships)
     maritime_count = ais_stream.ship_count()
 
-    return {
-        "flights": 0,
-        "sats": sat_count,
-        "maritime": maritime_count,
-    }
+    return {"sats": sat_count, "maritime": maritime_count}
 
 
 @router.get("")
 async def get_stats():
     """
-    Platform summary statistics: total active tracked flights, satellites, and AIS maritime vessels.
+    Platform summary statistics for satellites and AIS maritime vessels.
     """
     global _snapshot, _snapshot_time
 
@@ -54,16 +50,6 @@ async def get_stats():
 
     try:
         stats = await _compute_stats()
-        # If flight_count is 0 because flights hasn't been fetched yet, try fetching once
-        if stats["flights"] == 0 and (not flights._cached_data or now - flights._last_fetch >= 60):
-            try:
-                data = await flights._fetch_flights()
-                flights._cached_data = data
-                flights._last_fetch = time.time()
-                stats["flights"] = len(data.get("military_flights", []))
-            except Exception as e:
-                logger.warning("Could not pre-fetch flights for stats: %s", e)
-
         _snapshot = {
             "stats": stats,
             "timestamp": datetime.now(timezone.utc).isoformat(),

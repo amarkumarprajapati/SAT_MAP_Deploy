@@ -13,7 +13,6 @@ export const API_PREFIX = '/api';
 
 export const API_ENDPOINTS = {
   HEALTH: `${API_PREFIX}/health`,
-  FLIGHTS: `${API_PREFIX}/flights`,
   MARITIME: `${API_PREFIX}/maritime`,
   SATELLITES: `${API_PREFIX}/satellites`,
   SATELLITES_ORBIT: `${API_PREFIX}/satellites/orbit`,
@@ -71,7 +70,6 @@ export function getApiUrl(endpoint: string): string {
 
 export const api = {
   health: () => getApiUrl(API_ENDPOINTS.HEALTH),
-  flights: () => getApiUrl(API_ENDPOINTS.FLIGHTS),
   maritime: (types?: string[], bounds?: { west: number; south: number; east: number; north: number }, includePorts = true, includeShips = Boolean(types?.length)) => {
     const params = new URLSearchParams();
     if (types?.length) params.set('types', types.join(','));

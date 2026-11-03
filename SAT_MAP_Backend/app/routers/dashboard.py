@@ -173,7 +173,7 @@ async def get_database_tables():
                     elif t_name == "ais_filter_mmsi":
                         desc = "MMSI allow-list filter — only vessels on this list are persisted to DB"
                     elif t_name == "api_snapshots":
-                        desc = "Serialized JSON payload cache (satellites, flights, OSINT feeds)"
+                        desc = "Serialized JSON payload cache (satellites, OSINT feeds)"
 
                     tables.append({
                         "name": t_name,

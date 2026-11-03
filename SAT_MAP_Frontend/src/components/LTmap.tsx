@@ -39,7 +39,6 @@ import { getLocationTimeInfo, formatTimeInZone } from "@/lib/country-time";
 import { api, styleUrl, mapImageryTileUrl } from "@/config/api";
 import { X, Play, Pause, FastForward } from "lucide-react";
 import ShipDetailPanel from "@/components/ShipDetailPanel";
-import MarineConditions from "@/components/MarineConditions";
 import ShipRoutePlaybackBar from "@/components/ShipRoutePlaybackBar";
 import { vesselIconKey, vesselIconScale, vesselSizeClass } from "@/lib/vessel-size";
 import { calculateVoyageDetails } from "@/lib/maritime-route";
@@ -834,14 +833,6 @@ function LTmap({
   }, [mapReady]);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!mapReady || !map) return;
-    const visibility = activeLayers.ship_heatmap && selectedAnalysisArea ? "visible" : "none";
-    for (const id of ["ship-uncertainty-heat", "ship-uncertainty-area", "ship-uncertainty-outline"]) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", visibility);
-    }
-  }, [mapReady, activeLayers.ship_heatmap, selectedAnalysisArea]);
-  useEffect(() => {
     if (!mapReady || !selectedAnalysisArea) return;
     const map = mapRef.current;
     if (!map) return;
@@ -1416,38 +1407,6 @@ function LTmap({
     }
   }, [intelOpenTrigger, setIntelOpen]);
 
-  const createIcon = useCallback(
-    (map: maplibregl.Map, id: string, color: string, size: number) => {
-      if (map.hasImage(id)) return;
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d")!;
-      const cx = size / 2;
-      const cy = size / 2;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - size * 0.4);
-      ctx.lineTo(cx - size * 0.12, cy + size * 0.1);
-      ctx.lineTo(cx - size * 0.4, cy + size * 0.2);
-      ctx.lineTo(cx - size * 0.4, cy + size * 0.3);
-      ctx.lineTo(cx - size * 0.12, cy + size * 0.15);
-      ctx.lineTo(cx, cy + size * 0.35);
-      ctx.lineTo(cx + size * 0.12, cy + size * 0.15);
-      ctx.lineTo(cx + size * 0.4, cy + size * 0.3);
-      ctx.lineTo(cx + size * 0.4, cy + size * 0.2);
-      ctx.lineTo(cx + size * 0.12, cy + size * 0.1);
-      ctx.closePath();
-      ctx.fill();
-      map.addImage(id, {
-        width: size,
-        height: size,
-        data: new Uint8Array(ctx.getImageData(0, 0, size, size).data),
-      });
-    },
-    [],
-  );
-
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const container = containerRef.current;
@@ -1534,18 +1493,6 @@ function LTmap({
     map.on("load", () => {
       mapRef.current = map;
       map.resize();
-      const bootStyle = getComputedStyle(document.body);
-      const boot = readMapPalette((name) => bootStyle.getPropertyValue(name));
-      const flightCom = boot.flightCivil;
-      const flightPriv = boot.flightPrivate;
-      const flightGov = boot.flightGov;
-      const flightMil = boot.flightMilitary;
-
-      createIcon(map, "plane-cyan", flightCom, 24);
-      createIcon(map, "plane-green", flightPriv, 24);
-      createIcon(map, "plane-pink", flightGov, 24);
-      createIcon(map, "plane-red", flightMil, 24);
-      createIcon(map, "plane-grey", boot.flightUnknown, 24);
       const registerShipIcon = (
         id: string,
         hullColor: string,
@@ -1692,7 +1639,6 @@ function LTmap({
         "ship-marker-military",
         "#ff1744",
         "#f87171",
-        "military",
       );
 
       const sizeClasses = ["small", "medium", "large", "very_large", "unknown"] as const;
@@ -1732,13 +1678,11 @@ function LTmap({
 
       const sources = [
         "day-night",
-        "military",
         "satellites",
         "sat-footprint",
         "maritime",
         "maritime-choke",
         "maritime-ships",
-        "ship-uncertainty",
         "sat-ships-in-view",
         "geospatial-video-track",
         "geospatial-video-frame",
@@ -1892,36 +1836,6 @@ function LTmap({
           satLayerRef.current as unknown as maplibregl.CustomLayerInterface,
         );
       }
-
-      const flightLayers = [
-        { id: "fl-military", src: "military", icon: "plane-red" },
-      ];
-      flightLayers.forEach((l) => {
-        map.addLayer({
-          id: l.id,
-          type: "symbol",
-          source: l.src,
-          layout: {
-            "icon-image": l.icon,
-            "icon-size": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              1,
-              0.4,
-              5,
-              0.7,
-              10,
-              1,
-            ],
-            "icon-rotate": ["get", "heading"],
-            "icon-rotation-alignment": "map",
-            "icon-allow-overlap": true,
-            "icon-ignore-placement": true,
-          },
-          paint: { "icon-opacity": 0.85 },
-        });
-      });
 
       map.addLayer({
         id: "maritime-glow",
@@ -2122,21 +2036,6 @@ function LTmap({
 
       // Maritime Ships
       map.addLayer({
-        id: "ship-uncertainty-heat",
-        type: "heatmap",
-        source: "ship-uncertainty",
-        filter: ["==", ["get", "kind"], "estimate"],
-        paint: {
-          "heatmap-weight": ["coalesce", ["get", "weight"], 0.4],
-          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 2, 0.65, 8, 1.25],
-          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 2, 18, 8, 36],
-          "heatmap-opacity": 0.8,
-          "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(0,229,255,0)", 0.25, "rgba(0,229,255,.22)", 0.55, "rgba(255,190,0,.55)", 1, "rgba(255,45,80,.82)"],
-        },
-      });
-      map.addLayer({ id: "ship-uncertainty-area", type: "fill", source: "ship-uncertainty", filter: ["==", ["get", "kind"], "uncertainty"], paint: { "fill-color": "#ffb020", "fill-opacity": 0.12 } });
-      map.addLayer({ id: "ship-uncertainty-outline", type: "line", source: "ship-uncertainty", filter: ["==", ["get", "kind"], "uncertainty"], paint: { "line-color": "#ffc857", "line-width": 1.25, "line-dasharray": [2, 2], "line-opacity": 0.8 } });
-      map.addLayer({
         id: "ship-dots",
         type: "symbol",
         source: "maritime-ships",
@@ -2290,17 +2189,10 @@ function LTmap({
       "ship-dots",
       "sweep-device-dots",
       "scan-targets-dots",
-      "sdk-sea",
-      "sdk-air",
-      "sdk-intel",
       "malware-dots",
       "cyber-heads",
       "cf-outage-dots",
       "cf-attack-dots",
-      "flight-dots",
-      "military-dots",
-      "jet-dots",
-      "private-dots",
       "alert-pin-dots",
     ]);
 
@@ -2619,36 +2511,6 @@ function LTmap({
   }, [showSatCircumference, selectedSat, mapReady, satPlaybackPlaying]);
 
   useEffect(() => {
-    if (!mapReady) return;
-    const toFeatures = (arr: unknown, decimate: number = 1) => {
-      let filtered = Array.isArray(arr) ? arr : [];
-      if (decimate > 1) {
-        filtered = filtered.filter((_, i) => i % decimate === 0);
-      }
-      return (filtered as Array<Record<string, unknown>>).map((f) => ({
-        type: "Feature" as const,
-        geometry: {
-          type: "Point" as const,
-          coordinates: [Number(f.lng || 0), Number(f.lat || 0)],
-        },
-        properties: {
-          callsign: f.callsign,
-          heading: f.heading || 0,
-          alt: f.alt,
-          model: f.model,
-          speed_knots: f.speed_knots,
-          registration: f.registration,
-          icao24: f.icao24,
-        },
-      }));
-    };
-    setGeo(
-      "military",
-      activeLayers.military ? toFeatures(data.military_flights) : [],
-    );
-  }, [mapReady, data.military_flights, activeLayers.military, setGeo]);
-
-  useEffect(() => {
     if (!mapReady || !mapRef.current) return;
     const anyShipActive = !!(
       activeLayers.ship_cargo ||
@@ -2756,7 +2618,6 @@ function LTmap({
       if (pendingShipsTimeoutRef.current)
         clearTimeout(pendingShipsTimeoutRef.current);
       setGeo("maritime-ships", []);
-      setGeo("ship-uncertainty", []);
       return;
     }
 
@@ -2775,45 +2636,8 @@ function LTmap({
       });
 
       const features = new Array(ships.length);
-      const uncertaintyFeatures: GeoJSON.Feature[] = [];
-      const nowSeconds = Date.now() / 1000;
-      const areaRing = selectedAnalysisArea?.geometry?.coordinates[0];
-      const isInArea = (lat: number, lng: number) => {
-        if (!selectedAnalysisArea) return false;
-        if (!areaRing?.length) return lng >= selectedAnalysisArea.west && lng <= selectedAnalysisArea.east && lat >= selectedAnalysisArea.south && lat <= selectedAnalysisArea.north;
-        let inside = false;
-        for (let i = 0, j = areaRing.length - 1; i < areaRing.length; j = i++) {
-          const [xi, yi] = areaRing[i], [xj, yj] = areaRing[j];
-          if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
-        }
-        return inside;
-      };
       for (let i = 0; i < ships.length; i++) {
         const s = ships[i];
-        const lat = Number(s.lat), lng = Number(s.lng);
-        const rawSeen = Number(s.lastSeenAt ?? s.timestamp);
-        const seenSeconds = rawSeen > 1e12 ? rawSeen / 1000 : rawSeen;
-        const ageHours = seenSeconds > 0 ? Math.max(0, (nowSeconds - seenSeconds) / 3600) : 0;
-        const stale = ageHours >= 0.25;
-        if (stale && Number.isFinite(lat) && Number.isFinite(lng)) {
-          const speedKnots = Math.max(0, Math.min(40, Number(s.speed) || 0));
-          const headingRad = ((Number(s.heading) || 0) * Math.PI) / 180;
-          const travelKm = Math.min(250, speedKnots * 1.852 * ageHours);
-          const predictedLat = lat + (travelKm * Math.cos(headingRad)) / 111;
-          const predictedLng = lng + (travelKm * Math.sin(headingRad)) / (111 * Math.max(0.15, Math.cos((lat * Math.PI) / 180)));
-          const radiusKm = Math.min(80, Math.max(2, travelKm * 0.35 + ageHours * 1.5));
-          const visibleInArea = !activeLayers.ship_heatmap || isInArea(predictedLat, predictedLng);
-          if (visibleInArea) {
-            uncertaintyFeatures.push({ type: "Feature", properties: { weight: Math.min(1, 0.25 + ageHours / 24), kind: "estimate", ageHours }, geometry: { type: "Point", coordinates: [predictedLng, predictedLat] } });
-            if (!activeLayers.ship_heatmap || isInArea(lat, lng)) {
-              const ring = Array.from({ length: 49 }, (_, n) => {
-                const angle = (n / 48) * Math.PI * 2;
-                return [predictedLng + (radiusKm / (111 * Math.max(0.15, Math.cos((predictedLat * Math.PI) / 180)))) * Math.cos(angle), predictedLat + (radiusKm / 111) * Math.sin(angle)];
-              });
-              uncertaintyFeatures.push({ type: "Feature", properties: { kind: "uncertainty", ageHours, uncertaintyKm: radiusKm }, geometry: { type: "Polygon", coordinates: [ring] } });
-            }
-          }
-        }
         features[i] = {
           type: "Feature",
           geometry: { type: "Point", coordinates: [Number(s.lng), Number(s.lat)] },
@@ -2847,7 +2671,6 @@ function LTmap({
         };
       }
       setGeo("maritime-ships", features);
-      setGeo("ship-uncertainty", uncertaintyFeatures);
     };
 
     const now = Date.now();
@@ -2880,8 +2703,6 @@ function LTmap({
     activeLayers.ship_cargo,
     activeLayers.ship_tanker,
     activeLayers.ship_military,
-    activeLayers.ship_heatmap,
-    selectedAnalysisArea,
     setGeo,
   ]);
 
@@ -3106,46 +2927,6 @@ function LTmap({
       window.removeEventListener(STYLE_EVENT, read);
     };
   }, [theme]);
-
-  useEffect(() => {
-    if (!mapReady || !mapRef.current) return;
-    const map = mapRef.current;
-
-    const updateMapIcon = (id: string, color: string, size: number) => {
-      if (!map.hasImage(id)) return;
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d")!;
-      const cx = size / 2;
-      const cy = size / 2;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - size * 0.4);
-      ctx.lineTo(cx - size * 0.12, cy + size * 0.1);
-      ctx.lineTo(cx - size * 0.4, cy + size * 0.2);
-      ctx.lineTo(cx - size * 0.4, cy + size * 0.3);
-      ctx.lineTo(cx - size * 0.12, cy + size * 0.15);
-      ctx.lineTo(cx, cy + size * 0.35);
-      ctx.lineTo(cx + size * 0.12, cy + size * 0.15);
-      ctx.lineTo(cx + size * 0.4, cy + size * 0.3);
-      ctx.lineTo(cx + size * 0.4, cy + size * 0.2);
-      ctx.lineTo(cx + size * 0.12, cy + size * 0.1);
-      ctx.closePath();
-      ctx.fill();
-      map.updateImage(id, {
-        width: size,
-        height: size,
-        data: new Uint8Array(ctx.getImageData(0, 0, size, size).data),
-      });
-    };
-
-    updateMapIcon("plane-cyan", palette.flightCivil, 24);
-    updateMapIcon("plane-green", palette.flightPrivate, 24);
-    updateMapIcon("plane-pink", palette.flightGov, 24);
-    updateMapIcon("plane-red", palette.flightMilitary, 24);
-    updateMapIcon("plane-grey", palette.flightUnknown, 24);
-  }, [mapReady, palette]);
 
   const toSatPoints = useCallback(
     (rows: SatelliteRow[]): SatPoint[] =>
@@ -4052,7 +3833,6 @@ function LTmap({
   return (
     <>
       <div ref={containerRef} className="absolute inset-0 w-full h-full" />
-      {mapReady && <MarineConditions mapRef={mapRef} />}
       {selectedShip && (
         <ShipDetailPanel
           ship={selectedShip}

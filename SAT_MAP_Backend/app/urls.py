@@ -1,6 +1,5 @@
 """Third-party service endpoints used by the backend."""
 
-ADSBFI_MILITARY = "https://opendata.adsb.fi/api/v2/mil"
 AISSTREAM_WEBSOCKET = "wss://stream.aisstream.io/v0/stream"
 DIGITRAFFIC_MQTT_HOST = "meri.digitraffic.fi"
 DIGITRAFFIC_MQTT_PORT = 443

@@ -51,7 +51,7 @@ services:
         RUN mkdir -p /app/.cache /app/data && useradd --system app && chown -R app:app /app
         USER app
         EXPOSE 8569
-        CMD ["python", "run.py"]
+        CMD ["python", "run.py", "--reload"]
     restart: unless-stopped
     env_file:
       - ./.env
@@ -60,6 +60,7 @@ services:
       HOST: 0.0.0.0
       PORT: 8569
       RELOAD: "true"
+      WATCHFILES_FORCE_POLLING: "true"
       DATABASE_HOST: mysql
       DATABASE_PORT: 3306
       DATABASE_NAME: ${MYSQL_DATABASE:-sat_map}
@@ -160,6 +161,14 @@ services:
       start_period: 30s
     networks:
       - app
+    develop:
+      watch:
+        - action: rebuild
+          path: ./SAT_MAP_Frontend
+          ignore:
+            - node_modules/
+            - .next/
+            - out/
 
 volumes:
   mysql_data:

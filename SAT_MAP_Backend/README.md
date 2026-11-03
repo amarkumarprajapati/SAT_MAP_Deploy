@@ -64,7 +64,7 @@ DATABASE_USER=sat_map
 DATABASE_PASSWORD=your-mysql-password
 ```
 
-Keep `.env` private. The backend stores the latest TLE catalogue, flight feed, and news snapshots in MySQL. The named `mysql_data` volume keeps them across container restarts. Existing SQLite snapshots are imported when MySQL is empty.
+Keep `.env` private. The backend stores the latest TLE catalogue and news snapshots in MySQL. The named `mysql_data` volume keeps them across container restarts. Existing SQLite snapshots are imported when MySQL is empty.
 
 ---
 
@@ -140,13 +140,11 @@ All endpoints are centrally registered in `app/endpoints.py` under the `/api` pr
 | Endpoint                | Method / Protocol | Description                                                                                                               | Third-Party Source                   |
 | :---------------------- | :---------------: | :------------------------------------------------------------------------------------------------------------------------ | :----------------------------------- |
 | `/api/health`           |       `GET`       | Health check, uptime, and endpoints registry                                                                              | Local                                |
-| `/api/flights`          |       `GET`       | Live military aircraft positions, types & jamming hotspots                                                                | `adsb.fi` / OpenSky                  |
 | `/api/maritime`         |    `WebSocket`    | Live AIS ship snapshots and real-time pushes (auto-pushes every 5s; supports client-side type and bounding-box filtering) | `aisstream.io` / Digitraffic / MySQL |
-| `/api/maritime/stream`  |    `WebSocket`    | Focused single-vessel real-time tracking by MMSI                                                                          | `aisstream.io`                       |
 | `/api/satellites`       |       `GET`       | All active satellites with real-time SGP4 orbital propagation                                                             | CelesTrak / SatNOGS                  |
 | `/api/satellites/orbit` |       `GET`       | Full single-orbit trajectory trace or live telemetry                                                                      | Local TLE Cache                      |
 | `/api/region-dossier`   |       `GET`       | OSINT dossier for coordinates: Reverse geocode, Wikidata & Wikipedia                                                      | Photon / Wikidata / Wikipedia        |
-| `/api/stats`            |       `GET`       | High-level tracker counters (flights, satellites, maritime)                                                               | In-memory aggregations               |
+| `/api/stats`            |       `GET`       | High-level satellite and maritime tracker counters                                                                        | In-memory aggregations               |
 
 ---
 
@@ -205,7 +203,6 @@ For the exhaustive technical specification with field-level schemas, see **[DATA
 | :--------------------------------- | :-------------------------------------------- | :------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Maritime (Global)**              | **AISStream** (`aisstream.io`)                | WebSocket (`wss://`) | **Live AIS vessel tracking:** MMSI, vessel name, coordinates, speed (SOG), heading (COG/TrueHeading), vessel type (cargo, tanker, military), destination.                                                                |
 | **Maritime (Baltic / Nordic)**     | **Fintraffic Digitraffic** (`digitraffic.fi`) | MQTT over TLS        | **Public Finnish/Baltic AIS feed:** High-frequency location updates and vessel metadata, merged into the main in-memory ship registry without API keys.                                                                  |
-| **Military Flights & GPS Jamming** | **adsb.fi**                                   | HTTPS REST           | **Global airborne transponders:** ICAO24 hex, callsigns, airframe models, barometric altitude, ground speed, track heading. Backend classifies military aircraft & detects GPS jamming/spoofing hotspots (`nac_p <= 4`). |
 | **Satellite Orbits (Primary)**     | **CelesTrak** (`celestrak.org`)               | HTTPS REST           | **Two-Line Elements (TLEs):** 13 constellation groups (GPS, GLONASS, Galileo, BeiDou, Weather, Earth Resources, Planet Labs, Military Recon, Radar). Propagated locally using SGP4/SDP4 Keplerian orbital mechanics.     |
 | **Satellite Orbits (Fallback)**    | **SatNOGS DB** (`satnogs.org`)                | HTTPS REST           | **Crowdsourced satellite TLE database:** Automated failover source if CelesTrak is unavailable or rate-limited.                                                                                                          |
 | **Reverse Geocoding**              | **Photon by Komoot** (OpenStreetMap)          | HTTPS REST           | **Coordinate-to-location mapping:** Converts `lat, lng` to city, state, country, and ISO country code.                                                                                                                   |

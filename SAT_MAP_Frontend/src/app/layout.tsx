@@ -6,7 +6,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 const SITE_URL = "https://osirisai.live";
 const SITE_NAME = "L&T";
 const SITE_TITLE = "LTmap — Intelligence Platform | Military Aircraft, Satellite & Maritime Tracking";
-const SITE_DESCRIPTION = "Global intelligence platform. Track live military aircraft, satellites, and maritime vessels on an interactive 3D globe.";
+const SITE_DESCRIPTION = "Global intelligence platform. Track satellites and maritime vessels on an interactive 3D globe.";
 
 export const viewport: Viewport = {
   themeColor: "#0072CE",
@@ -30,7 +30,6 @@ export const metadata: Metadata = {
     "intelligence dashboard",
     
     // Tracking & Data
-    "military flight tracker", "military aircraft tracking", "ADS-B military", "live flight radar",
     "satellite tracking", "ISS tracker", "maritime vessel tracking",
     
     // Brand
@@ -58,8 +57,8 @@ export const metadata: Metadata = {
     canonical: SITE_URL,
   },
   openGraph: {
-    title: "LTmap — Live Military Flights, Satellites & Maritime Tracking",
-    description: "Track military aircraft, satellites, and maritime intelligence feeds on an interactive 3D map.",
+    title: "LTmap — Satellite & Maritime Tracking",
+    description: "Track satellites and maritime intelligence feeds on an interactive 3D map.",
     type: "website",
     siteName: SITE_NAME,
     locale: "en_US",
@@ -110,7 +109,6 @@ const jsonLd = {
     "SSL/TLS certificate transparency search",
     "BGP routing & ASN lookup",
     "IP geolocation & threat intelligence",
-    "Real-time military flight tracking via ADS-B",
     "Satellite tracking (including ISS)",
     "Maritime vessel & chokepoints tracking",
     "Cyber threat & CVE intelligence",
@@ -134,7 +132,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" dir="ltr">
-      <head>
+      <head suppressHydrationWarning>
         <link rel="icon" href="data:," />
         <link rel="canonical" href={SITE_URL} />
         

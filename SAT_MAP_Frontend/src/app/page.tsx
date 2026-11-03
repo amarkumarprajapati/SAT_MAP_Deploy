@@ -372,7 +372,6 @@ const hudIn = (delay: number) => ({ duration: 0.7, ease: HUD_EASE, delay });
 export default function Dashboard() {
   // ── SPLIT DATA ATOMS — prevents cascade re-renders ──
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [militaryFlights, setMilitaryFlights] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [satellites, setSatellites] = useState<any[]>([]);
   const [satellitesAt, setSatellitesAt] = useState<string | number | null>(
@@ -441,7 +440,6 @@ export default function Dashboard() {
     useState<LocationTimeInfo | null>(null);
   const [selectedSatellite, setSelectedSatellite] =
     useState<SatelliteDetail | null>(null);
-  const satelliteShipsRequestRef = useRef<string | null>(null);
   const [clearSatTrigger, setClearSatTrigger] = useState(0);
   const [intelOpenTrigger] = useState(0);
   const [isIntelOpen, setIsIntelOpen] = useState(false);
@@ -458,7 +456,7 @@ export default function Dashboard() {
     unknown
   > | null>(null);
   const maritimeWsRef = useRef<WebSocket | null>(null);
-  const maritimeStreamWsRef = useRef<WebSocket | null>(null);
+  const sendMaritimeWsFiltersRef = useRef<() => void>(() => {});
   const trackedShipMmsiRef = useRef(trackedShipMmsi);
   useEffect(() => {
     trackedShipMmsiRef.current = trackedShipMmsi;
@@ -549,12 +547,10 @@ export default function Dashboard() {
   const [mapStyle, setMapStyle] = useState<"dark" | "satellite">("dark");
 
   const [activeLayers, setActiveLayers] = useState<Record<string, boolean>>({
-    military: true,
     maritime: false,
-    ship_cargo: false,
-    ship_tanker: false,
-    ship_military: false,
-    ship_heatmap: false,
+    ship_cargo: true,
+    ship_tanker: true,
+    ship_military: true,
     satellites: true,
     sat_comms: false,
     sat_military: true,
@@ -564,9 +560,6 @@ export default function Dashboard() {
     rf_coverage: true,
     balloons: false,
     radiation: false,
-    sdk_sea: true,
-    sdk_air: true,
-    sdk_naval: true,
     live_clouds: false,
     day_night: false,
   });
@@ -697,24 +690,15 @@ export default function Dashboard() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const p = new URLSearchParams(window.location.search);
-    const layers = p.get("layers");
-    if (layers !== null) {
-      const active = new Set(layers.split(",").filter(Boolean));
-      if (active.has("ships")) {
-        active.add("ship_cargo");
-        active.add("ship_tanker");
-        active.add("ship_military");
-      }
-      setTimeout(() => {
-        setActiveLayers((prev) => {
-          const next = { ...prev };
-          Object.keys(next).forEach((k) => {
-            (next as Record<string, boolean>)[k] = active.has(k);
-          });
-          return next;
-        });
-      }, 0);
+    const currentUrl = new URL(window.location.href);
+    if (currentUrl.searchParams.has("layers")) {
+      currentUrl.searchParams.delete("layers");
+      const query = currentUrl.searchParams.toString();
+      window.history.replaceState(
+        null,
+        "",
+        `${currentUrl.pathname}${query ? `?${query}` : ""}${currentUrl.hash}`,
+      );
     }
 
     // Location is initialized in state; device geolocation updates asynchronously if permitted
@@ -747,20 +731,6 @@ export default function Dashboard() {
       }, 0);
     }
   }, []);
-
-  const urlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (urlTimer.current) clearTimeout(urlTimer.current);
-    urlTimer.current = setTimeout(() => {
-      const active = Object.entries(activeLayers)
-        .filter(([, v]) => v)
-        .map(([k]) => k)
-        .join(",");
-      const url = `${window.location.pathname}?layers=${active}`;
-      window.history.replaceState(null, "", url);
-    }, 1500);
-  }, [activeLayers]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -879,34 +849,6 @@ export default function Dashboard() {
     [],
   );
 
-  // Specific fetcher for military flights — non-urgent (startTransition)
-  const fetchFlights = useCallback(async (): Promise<boolean> => {
-    if (typeof document !== "undefined" && document.hidden) return false;
-    try {
-      const res = await apiClient.get(getApiUrl(API_ENDPOINTS.FLIGHTS));
-      if (res.status === 200 && res.data) {
-        startTransition(() => {
-          const flights = Array.isArray(res.data.military_flights)
-            ? res.data.military_flights
-            : Array.isArray(res.data)
-              ? res.data
-              : [];
-          setMilitaryFlights(flights);
-        });
-        setBackendStatus("connected");
-        setBackendError("");
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.warn(
-        "[L&T] Flights fetch error:",
-        e instanceof Error ? e.message : e,
-      );
-      return false;
-    }
-  }, []);
-
   // Specific fetcher for satellites — urgent (no startTransition)
   const fetchSatellites = useCallback(async (): Promise<boolean> => {
     const categories = [
@@ -992,6 +934,9 @@ export default function Dashboard() {
     mapCenter,
   ]);
 
+  // Keep the socket lifecycle stable while the viewport callback changes.
+  sendMaritimeWsFiltersRef.current = sendMaritimeWsFilters;
+
   const fetchMaritime = useCallback(async (): Promise<boolean> => {
     sendMaritimeWsFilters();
     return true;
@@ -1016,25 +961,22 @@ export default function Dashboard() {
 
   const fetchersRef = useRef({
     fetchSatellites,
-    fetchFlights,
     fetchExtra,
     fetchMaritime,
   });
   useEffect(() => {
     fetchersRef.current = {
       fetchSatellites,
-      fetchFlights,
       fetchExtra,
       fetchMaritime,
     };
-  }, [fetchSatellites, fetchFlights, fetchExtra, fetchMaritime]);
+  }, [fetchSatellites, fetchExtra, fetchMaritime]);
 
   // ── INITIAL DATA LOAD — staggered to show map immediately ──
   useEffect(() => {
     if (!mapReady) return;
     if (layerFetchedRef.current.has("initial")) return;
     layerFetchedRef.current.add("initial");
-    layerFetchedRef.current.add("flights");
     layerFetchedRef.current.add("satellites");
     layerFetchedRef.current.add("maritime");
 
@@ -1049,23 +991,7 @@ export default function Dashboard() {
       void loadSatellites();
     }, 500);
 
-    // 2. Flights (secondary aviation layer) — 1800ms delay
-    const flightTimer = setTimeout(
-      () => void fetchersRef.current.fetchFlights(),
-      1800,
-    );
-
-    // 3. Ships & Maritime (heavy vessel layer) — 3200ms delay
-    const shipTimer = setTimeout(() => {
-      const loadShips = async (attempt = 0): Promise<void> => {
-        const loaded = await fetchersRef.current.fetchMaritime();
-        if (!loaded && attempt < 4)
-          window.setTimeout(() => void loadShips(attempt + 1), 3000);
-      };
-      void loadShips();
-    }, 3200);
-
-    // 4. Stats & telemetry (least critical) — 4800ms delay
+    // 2. Stats & telemetry (least critical) — 4800ms delay
     const statsTimer = setTimeout(
       () => void fetchersRef.current.fetchExtra(API_ENDPOINTS.STATS),
       4800,
@@ -1073,19 +999,12 @@ export default function Dashboard() {
 
     return () => {
       clearTimeout(satTimer);
-      clearTimeout(flightTimer);
-      clearTimeout(shipTimer);
       clearTimeout(statsTimer);
     };
   }, [mapReady]);
 
-  const viewportFetchInitializedRef = useRef(false);
   useEffect(() => {
     if (!mapReady || !mapCenter?.bounds) return;
-    if (!viewportFetchInitializedRef.current) {
-      viewportFetchInitializedRef.current = true;
-      return;
-    }
     const timer = window.setTimeout(() => {
       if (
         activeLayers.sat_military ||
@@ -1114,10 +1033,6 @@ export default function Dashboard() {
   useEffect(() => {
     const intervals: ReturnType<typeof setInterval>[] = [];
     const stopFns: (() => void)[] = [];
-    if (activeLayers.military) {
-      intervals.push(setInterval(() => void fetchFlights(), 300000)); // 5 min
-    }
-
     if (activeLayers.balloons) {
       intervals.push(
         setInterval(
@@ -1154,7 +1069,7 @@ export default function Dashboard() {
       intervals.forEach(clearInterval);
       stopFns.forEach((stop) => stop());
     };
-  }, [activeLayers, fetchFlights, fetchExtra, fetchMaritime]);
+  }, [activeLayers, fetchExtra, fetchMaritime]);
 
   // ── Maritime WebSocket Connection (/api/maritime) ──
   useEffect(() => {
@@ -1177,7 +1092,7 @@ export default function Dashboard() {
       maritimeWsRef.current = socket;
 
       socket.onopen = () => {
-        sendMaritimeWsFilters();
+        sendMaritimeWsFiltersRef.current();
       };
 
       socket.onmessage = (event) => {
@@ -1189,6 +1104,18 @@ export default function Dashboard() {
               if (Array.isArray(res.chokepoints))
                 setMaritimeChokepoints(res.chokepoints);
               if (Array.isArray(res.ships)) setMaritimeShips(res.ships);
+              if (Array.isArray(res.ships)) setSatelliteMaritimeShips(res.ships);
+              if (Array.isArray(res.ships)) {
+                const trackedMmsi = trackedShipMmsiRef.current;
+                const trackedShip = trackedMmsi
+                  ? res.ships.find(
+                      (ship: Record<string, unknown>) =>
+                        String(ship.mmsi ?? ship.id ?? "") ===
+                        String(trackedMmsi),
+                    )
+                  : null;
+                setLiveTrackedShip(trackedShip ?? null);
+              }
               if (res.category_counts !== undefined)
                 setCategoryCounts(res.category_counts);
               if (res.total_ships !== undefined) setTotalShips(res.total_ships);
@@ -1215,145 +1142,11 @@ export default function Dashboard() {
       maritimeWsRef.current = null;
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
-  }, [mapReady, sendMaritimeWsFilters]);
-
-  // Keep WebSocket filters up-to-date as viewport / active layer filters change
-  useEffect(() => {
-    sendMaritimeWsFilters();
-  }, [sendMaritimeWsFilters]);
-
-  // ── Focused WebSocket Tracking (only streams the vessel you clicked / tracked) ──
-  useEffect(() => {
-    if (!mapReady || typeof window === "undefined") return;
-    let stopped = false;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const connect = () => {
-      if (stopped) return;
-      const apiBase = process.env.NEXT_PUBLIC_FASTAPI_URL;
-      const stream = apiBase
-        ? new URL("/api/maritime/stream", apiBase)
-        : new URL(
-            "/api/maritime/stream",
-            `${window.location.protocol}//${window.location.hostname}:8569`,
-          );
-      stream.protocol = stream.protocol === "https:" ? "wss:" : "ws:";
-      const socket = new WebSocket(stream.toString());
-      maritimeStreamWsRef.current = socket;
-
-      socket.onopen = () => {
-        if (trackedShipMmsiRef.current) {
-          socket.send(
-            JSON.stringify({
-              action: "track",
-              mmsi: trackedShipMmsiRef.current,
-            }),
-          );
-        }
-      };
-
-      socket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          if (message.type === "ship_update" && message.ship) {
-            const ship = message.ship;
-            setLiveTrackedShip(ship);
-            setMaritimeShips((prev) => {
-              const ships = (Array.isArray(prev) ? prev : []) as Record<
-                string,
-                unknown
-              >[];
-              const id = String(ship.mmsi ?? ship.id ?? "");
-              const idx = ships.findIndex(
-                (s: Record<string, unknown>) =>
-                  String(s.mmsi ?? s.id ?? "") === id,
-              );
-              if (idx >= 0) {
-                const updated = [...ships];
-                updated[idx] = { ...updated[idx], ...ship };
-                return updated;
-              }
-              return prev;
-            });
-          }
-        } catch {
-          // Ignore malformed frames
-        }
-      };
-
-      socket.onclose = () => {
-        maritimeStreamWsRef.current = null;
-        if (!stopped) reconnectTimer = setTimeout(connect, 3000);
-      };
-      socket.onerror = () => socket.close();
-    };
-
-    connect();
-    return () => {
-      stopped = true;
-      maritimeStreamWsRef.current?.close();
-      maritimeStreamWsRef.current = null;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
   }, [mapReady]);
-
-  // Synchronize tracking target with WebSocket server
-  useEffect(() => {
-    const ws = maritimeStreamWsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    if (trackedShipMmsi) {
-      ws.send(JSON.stringify({ action: "track", mmsi: trackedShipMmsi }));
-    } else {
-      ws.send(JSON.stringify({ action: "untrack" }));
-    }
-  }, [trackedShipMmsi]);
-
-  const sdkEntities = useMemo(() => {
-    const anyActive =
-      activeLayers.sdk_sea || activeLayers.sdk_air || activeLayers.sdk_naval;
-    if (!anyActive) {
-      return [];
-    }
-
-    interface FlightCoord {
-      lat?: number;
-      lng?: number;
-      callsign?: string;
-    }
-    const entities: Array<{
-      type: "Feature";
-      geometry: { type: "Point"; coordinates: [number, number] };
-      properties: { domain: string; name: string; source: string };
-    }> = [];
-
-    const allFlights = (militaryFlights || []) as FlightCoord[];
-    const flightStep = Math.max(1, Math.floor(allFlights.length / 60));
-    for (let i = 0; i < allFlights.length; i += flightStep) {
-      const f = allFlights[i];
-      if (!f.lat || !f.lng) continue;
-      entities.push({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [f.lng, f.lat] },
-        properties: {
-          domain: "AIR",
-          name: f.callsign?.trim() || "TRACK",
-          source: "ADS-B / OpenSky",
-        },
-      });
-    }
-
-    return entities;
-  }, [
-    militaryFlights,
-    activeLayers.sdk_sea,
-    activeLayers.sdk_air,
-    activeLayers.sdk_naval,
-  ]);
 
   // Stable mapData — only recalculates when individual data atoms change
   const mapData = useMemo(
     () => ({
-      military_flights: militaryFlights,
       satellites,
       satellites_at: satellitesAt,
       satellite_category_counts: satelliteCategoryCounts,
@@ -1363,11 +1156,9 @@ export default function Dashboard() {
       maritime_chokepoints: maritimeChokepoints,
       category_counts: categoryCounts,
       total_ships: totalShips,
-      sdk_entities: sdkEntities,
       ...extraData,
     }),
     [
-      militaryFlights,
       satellites,
       satellitesAt,
       satelliteCategoryCounts,
@@ -1377,7 +1168,6 @@ export default function Dashboard() {
       maritimeChokepoints,
       categoryCounts,
       totalShips,
-      sdkEntities,
       extraData,
     ],
   );
@@ -1409,26 +1199,7 @@ export default function Dashboard() {
           onCountryClick={setSelectedCountryTime}
           onSatelliteSelect={(sat) => {
             setSelectedSatellite(sat);
-            if (
-              sat?.noradId &&
-              satelliteShipsRequestRef.current !== sat.noradId
-            ) {
-              satelliteShipsRequestRef.current = sat.noradId;
-              setSatelliteMaritimeShips(null);
-              void apiClient
-                .get(api.maritime(undefined, undefined, false, true))
-                .then((res) => {
-                  setSatelliteMaritimeShips(
-                    Array.isArray(res.data?.ships) ? res.data.ships : [],
-                  );
-                })
-                .catch((error) => {
-                  console.warn("[L&T] Satellite AIS snapshot failed:", error);
-                  setSatelliteMaritimeShips([]);
-                });
-            }
             if (!sat) {
-              satelliteShipsRequestRef.current = null;
               setSatelliteMaritimeShips(null);
               setIsIntelOpen(false);
               setIsSliderOpen(false);
@@ -1496,17 +1267,6 @@ export default function Dashboard() {
       </ErrorBoundary>
       <RightTacticalDock
         isAreaDrawerOpen={areaDrawerOpen}
-        onOpenShipHeatmap={() => {
-          setAreaDrawerOpen(true);
-          setActiveLayers((prev) => ({
-            ...prev,
-            ship_heatmap: true,
-            ship_cargo: true,
-            ship_tanker: true,
-            ship_military: true,
-          }));
-          if (!analysisArea) setAreaDrawMode(true);
-        }}
         onToggleAreaDrawer={() => {
           setAreaDrawerOpen((open) => !open);
         }}
@@ -1519,14 +1279,10 @@ export default function Dashboard() {
           <div className="mb-3 flex items-center justify-between">
             <div>
               <div className="font-mono text-xs font-bold tracking-[.18em] text-cyan-200">
-                {activeLayers.ship_heatmap
-                  ? "VESSEL ACTIVITY HEAT MAP"
-                  : "SATELLITE ACCESS"}
+                SATELLITE ACCESS
               </div>
               <div className="mt-1 text-[10px] text-zinc-400">
-                {activeLayers.ship_heatmap
-                  ? "Draw an area to estimate stale AIS vessel locations"
-                  : "Draw a map area, then forecast orbital passes"}
+                Draw a map area, then forecast orbital passes
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -1567,32 +1323,6 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() =>
-              setActiveLayers((prev) => ({
-                ...prev,
-                ship_heatmap: !prev.ship_heatmap,
-                ...(prev.ship_heatmap
-                  ? {}
-                  : {
-                      ship_cargo: true,
-                      ship_tanker: true,
-                      ship_military: true,
-                    }),
-              }))
-            }
-            className={`mt-2 flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-bold ${activeLayers.ship_heatmap ? "border-amber-300/50 bg-amber-300/15 text-amber-100" : "border-white/10 bg-black/20 text-zinc-400 hover:text-white"}`}
-          >
-            {activeLayers.ship_heatmap
-              ? "Vessel heat map enabled"
-              : "Enable vessel heat map"}
-          </button>
-          {activeLayers.ship_heatmap && !analysisArea && (
-            <p className="mt-2 text-[10px] text-amber-200">
-              Select an area to display estimated vessel positions there.
-            </p>
-          )}
           <div className="grid grid-cols-2 gap-1.5">
             {(
               [
