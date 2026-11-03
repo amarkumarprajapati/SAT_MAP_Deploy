@@ -545,6 +545,80 @@ async def load_ships_from_db() -> dict[int, dict[str, Any]]:
     return ships
 
 
+async def get_ship_from_db(mmsi: int | str) -> dict[str, Any] | None:
+    """Load one vessel and its most recent 1,000 persisted AIS fixes."""
+    pool = database._pool
+    sqlite = database._sqlite
+    if pool is None and sqlite is None:
+        return None
+    try:
+        query = (
+            "SELECT mmsi, name, ship_type, lat, lng, speed, heading, destination, "
+            "ais_type_code, length_m, width_m, draught, size_class, size_source, "
+            "first_seen_lat, first_seen_lng, first_seen_at, last_seen_at, "
+            "track_distance_km, track_point_count, extra_json "
+            "FROM ais_vessels WHERE mmsi = %s"
+        )
+        if pool is not None:
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(query, (int(mmsi),))
+                    row = await cur.fetchone()
+                    if row:
+                        await cur.execute(
+                            "SELECT lat, lng, speed, heading, recorded_at FROM ais_track_points "
+                            "WHERE mmsi = %s ORDER BY recorded_at DESC LIMIT 1000",
+                            (int(mmsi),),
+                        )
+                        tracks = await cur.fetchall()
+                    else:
+                        tracks = []
+        else:
+            cur = sqlite.cursor()
+            cur.execute(query.replace("%s", "?"), (int(mmsi),))
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    "SELECT lat, lng, speed, heading, recorded_at FROM ais_track_points "
+                    "WHERE mmsi = ? ORDER BY recorded_at DESC LIMIT 1000",
+                    (int(mmsi),),
+                )
+                tracks = cur.fetchall()
+            else:
+                tracks = []
+        if not row:
+            return None
+
+        (vessel_mmsi, name, ship_type, lat, lng, speed, heading, destination,
+         ais_type_code, length, width, draught, size_class, size_source,
+         first_lat, first_lng, first_at, last_at, distance, point_count, extra_json) = row
+        ship: dict[str, Any] = {
+            "id": vessel_mmsi, "mmsi": vessel_mmsi, "name": name,
+            "type": ship_type or "cargo", "lat": lat, "lng": lng,
+            "speed": speed, "heading": heading, "destination": destination,
+            "aisTypeCode": ais_type_code, "length": length, "width": width,
+            "draught": draught, "sizeClass": size_class,
+            "sizeSource": size_source, "firstSeenLat": first_lat,
+            "firstSeenLng": first_lng, "firstSeenAt": first_at,
+            "lastSeenAt": last_at, "timestamp": last_at,
+            "trackDistanceKm": distance or 0, "trackPointCount": point_count or 0,
+        }
+        if extra_json:
+            extra = json.loads(extra_json) if isinstance(extra_json, str) else extra_json
+            if isinstance(extra, dict):
+                ship.update({key: value for key, value in extra.items() if key not in ship})
+        ship["track"] = [
+            {"lat": point[0], "lng": point[1], "speed": point[2], "heading": point[3], "timestamp": point[4]}
+            for point in reversed(tracks)
+        ]
+        return ship
+    except (TypeError, ValueError):
+        return None
+    except Exception:
+        logger.exception("Failed to load vessel details for MMSI %s", mmsi)
+        return None
+
+
 # ── Background loops ────────────────────────────────────────────────────────────
 
 async def _flush_loop() -> None:

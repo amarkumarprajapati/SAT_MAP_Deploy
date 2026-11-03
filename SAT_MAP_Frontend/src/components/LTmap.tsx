@@ -40,6 +40,7 @@ import { api, styleUrl, mapImageryTileUrl } from "@/config/api";
 import { X, Play, Pause, FastForward } from "lucide-react";
 import ShipDetailPanel from "@/components/ShipDetailPanel";
 import ShipRoutePlaybackBar from "@/components/ShipRoutePlaybackBar";
+import VesselFullDetailsPanel from "@/components/VesselFullDetailsPanel";
 import { vesselIconKey, vesselIconScale, vesselSizeClass } from "@/lib/vessel-size";
 import { calculateVoyageDetails } from "@/lib/maritime-route";
 
@@ -1060,6 +1061,7 @@ function LTmap({
     unknown
   > | null>(null);
   const [routeTelemetryShip, setRouteTelemetryShip] = useState<Record<string, unknown> | null>(null);
+  const [showVesselFullDetails, setShowVesselFullDetails] = useState(false);
   const [selectedShipCardPosition, setSelectedShipCardPosition] = useState({
     x: 400,
     y: 500,
@@ -1091,8 +1093,6 @@ function LTmap({
           { type: "Feature", properties: { kind: "route-start" }, geometry: { type: "Point", coordinates: coords[0] } },
           { type: "Feature", properties: { kind: "route-end" }, geometry: { type: "Point", coordinates: coords[coords.length - 1] } },
         ] });
-        const longitudes = coords.map(([lng]) => lng), latitudes = coords.map(([, lat]) => lat);
-        map.fitBounds([[Math.min(...longitudes), Math.min(...latitudes)], [Math.max(...longitudes), Math.max(...latitudes)]], { padding: { top: 100, right: 110, bottom: 175, left: 110 }, duration: 900, maxZoom: 10 });
       }
     };
     window.addEventListener("ltmap:ship-route-playback", onPlayback);
@@ -1525,110 +1525,31 @@ function LTmap({
         ctx.scale(shapeScale[0], shapeScale[1]);
         ctx.translate(-16, -16);
 
+        void typeKind;
         ctx.shadowColor = hullColor;
-        ctx.shadowBlur = 4;
+        ctx.shadowBlur = 2;
+        ctx.beginPath();
+        ctx.moveTo(16, 3);
+        ctx.quadraticCurveTo(23, 10, 23, 21);
+        ctx.lineTo(19, 29);
+        ctx.lineTo(13, 29);
+        ctx.lineTo(9, 21);
+        ctx.quadraticCurveTo(9, 10, 16, 3);
+        ctx.closePath();
+        ctx.fillStyle = hullColor;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "#020b14";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
 
-        if (typeKind === "military") {
-          ctx.beginPath();
-          ctx.moveTo(16, 2);
-          ctx.lineTo(23, 14);
-          ctx.lineTo(21, 29);
-          ctx.lineTo(11, 29);
-          ctx.lineTo(9, 14);
-          ctx.closePath();
-          ctx.fillStyle = hullColor;
-          ctx.fill();
-
-          ctx.shadowBlur = 0;
-          ctx.strokeStyle = "#020b14";
-          ctx.lineWidth = 1.6;
-          ctx.stroke();
-          ctx.fillStyle = "#ffffff";
-          ctx.beginPath();
-          ctx.arc(16, 9, 1.8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "#1c0307";
-          ctx.strokeStyle = detailColor;
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          ctx.rect(13, 15, 6, 6);
-          ctx.fill();
-          ctx.stroke();
-          ctx.strokeStyle = `${detailColor}99`;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(12.5, 23, 7, 5);
-        } else if (typeKind === "tanker") {
-          ctx.beginPath();
-          ctx.moveTo(16, 2);
-          ctx.bezierCurveTo(24, 5, 25, 16, 24, 28);
-          ctx.lineTo(8, 28);
-          ctx.bezierCurveTo(7, 16, 8, 5, 16, 2);
-          ctx.closePath();
-          ctx.fillStyle = hullColor;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-          ctx.strokeStyle = "#020b14";
-          ctx.lineWidth = 1.6;
-          ctx.stroke();
-          ctx.fillStyle = "#261403";
-          ctx.strokeStyle = `${detailColor}99`;
-          ctx.lineWidth = 0.9;
-          ctx.beginPath();
-          ctx.arc(16, 10, 2.8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(16, 17, 2.8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-          ctx.fillStyle = "#120802";
-          ctx.strokeStyle = detailColor;
-          ctx.lineWidth = 1.2;
-          ctx.strokeRect(12, 22.5, 8, 5);
-        } else {
-          ctx.beginPath();
-          ctx.moveTo(16, 2);
-          ctx.bezierCurveTo(22, 7, 24, 15, 23, 23);
-          ctx.lineTo(21, 29);
-          ctx.lineTo(11, 29);
-          ctx.lineTo(9, 23);
-          ctx.bezierCurveTo(8, 15, 10, 7, 16, 2);
-          ctx.closePath();
-          ctx.fillStyle = hullColor;
-          ctx.fill();
-
-          ctx.shadowBlur = 0;
-          ctx.strokeStyle = "#020b14";
-          ctx.lineWidth = 1.6;
-          ctx.stroke();
-
-          // Stacked container bays on deck
-          ctx.fillStyle = "#061726";
-          ctx.strokeStyle = `${hullColor}aa`;
-          ctx.lineWidth = 0.8;
-          ctx.strokeRect(12.5, 7, 7, 5);
-          ctx.strokeRect(12.5, 13, 7, 5);
-
-          // Aft superstructure bridge
-          ctx.fillStyle = "#03101c";
-          ctx.strokeStyle = detailColor;
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          ctx.rect(12.5, 19.5, 7, 6);
-          ctx.fill();
-          ctx.stroke();
-
-          // Center radar mast
-          ctx.fillStyle = "#ffffff";
-          ctx.beginPath();
-          ctx.arc(16, 22, 1.2, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Bow navigation light
-          ctx.beginPath();
-          ctx.arc(16, 4, 1, 0, Math.PI * 2);
-          ctx.fill();
-        }
+        // Simple bridge on the deck keeps the top-down ship silhouette legible.
+        ctx.fillStyle = detailColor;
+        ctx.beginPath();
+        ctx.roundRect(13, 17, 6, 6, 1);
+        ctx.fill();
+        ctx.fillStyle = "#07101d";
+        ctx.fillRect(14, 18, 4, 2);
 
         ctx.restore();
         // MapLibre accepts ImageData directly. Passing a DOM ImageData object
@@ -1683,6 +1604,7 @@ function LTmap({
 
       const sources = [
         "day-night",
+        "wind",
         "satellites",
         "sat-footprint",
         "maritime",
@@ -1695,6 +1617,7 @@ function LTmap({
       sources.forEach((s) =>
         map.addSource(s, { type: "geojson", data: EMPTY_FC }),
       );
+      map.addSource("wind-flow", { type: "geojson", data: EMPTY_FC, lineMetrics: true });
 
       // Day & Night Solar Shadow layer (fill only, no dividing line)
       map.addLayer({
@@ -1705,6 +1628,61 @@ function LTmap({
         paint: {
           "fill-color": "#020617",
           "fill-opacity": 0.44,
+        },
+      });
+      map.addLayer({
+        id: "viewport-wind-flow-lines",
+        type: "line",
+        source: "wind-flow",
+        minzoom: 4.5,
+        layout: { visibility: "none", "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#dff8ff",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4.5, 1.1, 10, 1.8],
+          "line-opacity": ["coalesce", ["get", "opacity"], 0.55],
+          "line-blur": 0.15,
+        },
+      });
+      map.addLayer({
+        id: "viewport-wind-arrows",
+        type: "symbol",
+        source: "wind",
+        minzoom: 4.5,
+        layout: {
+          visibility: "none",
+          "text-field": "↑",
+          "text-font": ["Open Sans Bold"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 1, 14, 7, 20],
+          "text-rotate": ["get", "arrowHeading"],
+          "text-rotation-alignment": "map",
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: {
+          "text-color": "#7dd3fc",
+          "text-halo-color": "#07101d",
+          "text-halo-width": 1.5,
+          "text-halo-blur": 0.5,
+        },
+      });
+      map.addLayer({
+        id: "viewport-wind-speed-labels",
+        type: "symbol",
+        source: "wind",
+        minzoom: 5,
+        layout: {
+          visibility: "none",
+          "text-field": ["concat", ["to-string", ["round", ["get", "speedKnots"]]], " kn"],
+          "text-font": ["Open Sans Regular"],
+          "text-size": 9,
+          "text-offset": [0, 1.35],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: {
+          "text-color": "#e0f2fe",
+          "text-halo-color": "#07101d",
+          "text-halo-width": 1.2,
         },
       });
 
@@ -2569,6 +2547,136 @@ function LTmap({
     const interval = setInterval(updateTerminator, 30000);
     return () => clearInterval(interval);
   }, [mapReady, activeLayers.day_night, setGeo]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    const syncWindLayer = () => {
+      const visible = Boolean(activeLayers.wind) && map.getZoom() >= 4.5;
+      for (const id of ["viewport-wind-arrows", "viewport-wind-speed-labels"]) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+      }
+      const samples = activeLayers.wind && Array.isArray(data.wind_samples)
+        ? data.wind_samples as Array<Record<string, unknown>>
+        : [];
+      setGeo("wind", samples.map((sample) => {
+      const directionDeg = Number(sample.directionDeg);
+      return {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [Number(sample.lng), Number(sample.lat)] },
+        properties: {
+          speedKnots: Number(sample.speedKnots),
+          directionDeg,
+          arrowHeading: (directionDeg + 180) % 360,
+        },
+      };
+      }).filter((feature) => feature.geometry.coordinates.every(Number.isFinite) && Number.isFinite(feature.properties.directionDeg) && Number.isFinite(feature.properties.speedKnots)));
+    };
+    syncWindLayer();
+    map.on("zoomend", syncWindLayer);
+    return () => { map.off("zoomend", syncWindLayer); };
+  }, [mapReady, activeLayers.wind, data.wind_samples, setGeo]);
+
+  // Animate wind particles as geographic lines so they pan and zoom with the map.
+  useEffect(() => {
+    const map = mapRef.current;
+    const samples = Array.isArray(data.wind_samples) ? data.wind_samples as Array<Record<string, unknown>> : [];
+    const source = map?.getSource("wind-flow") as maplibregl.GeoJSONSource | undefined;
+    const flowLayerId = "viewport-wind-flow-lines";
+    if (!mapReady || !map || !source || !activeLayers.wind || !samples.length) {
+      if (map?.getLayer(flowLayerId)) map.setLayoutProperty(flowLayerId, "visibility", "none");
+      source?.setData(EMPTY_FC);
+      return;
+    }
+
+    type WindParticle = { lng: number; lat: number; age: number; maxAge: number; knots: number; trail: [number, number][] };
+    const validSamples = samples.map((sample) => ({
+      lat: Number(sample.lat),
+      lng: Number(sample.lng),
+      speed: Number(sample.speedKnots),
+      direction: Number(sample.directionDeg),
+    })).filter((sample) => Number.isFinite(sample.lat) && Number.isFinite(sample.lng) && Number.isFinite(sample.speed) && Number.isFinite(sample.direction));
+    if (!validSamples.length) return;
+
+    const bounds = map.getBounds();
+    const randomPoint = (): [number, number] => {
+      const lat = bounds.getSouth() + Math.random() * (bounds.getNorth() - bounds.getSouth());
+      const west = bounds.getWest();
+      const east = bounds.getEast();
+      let lng = west + Math.random() * (east - west);
+      lng = ((lng + 180) % 360 + 360) % 360 - 180;
+      return [lng, lat];
+    };
+    const makeParticle = (): WindParticle => {
+      const [lng, lat] = randomPoint();
+      return { lng, lat, age: Math.random() * 2.5, maxAge: 2 + Math.random() * 2.5, knots: 0, trail: [[lng, lat]] };
+    };
+    const particles = Array.from({ length: 150 }, makeParticle);
+    if (map.getLayer(flowLayerId)) map.setLayoutProperty(flowLayerId, "visibility", "visible");
+    let previousAt = performance.now();
+    const interval = window.setInterval(() => {
+      const now = performance.now();
+      const deltaSeconds = Math.min(0.2, (now - previousAt) / 1000);
+      previousAt = now;
+      const viewport = map.getBounds();
+      const features = [] as Array<GeoJSON.Feature<GeoJSON.LineString>>;
+      const metersPerLatitudeDegree = 111_320;
+
+      for (const particle of particles) {
+        const nearby = validSamples
+          .map((sample) => {
+            const dx = ((sample.lng - particle.lng + 540) % 360) - 180;
+            const dy = sample.lat - particle.lat;
+            const eastScaled = dx * Math.cos((particle.lat * Math.PI) / 180);
+            return { sample, distance: eastScaled * eastScaled + dy * dy };
+          })
+          .sort((a, b) => a.distance - b.distance)
+          .slice(0, 4);
+        let totalWeight = 0;
+        let eastFlow = 0;
+        let northFlow = 0;
+        let averageKnots = 0;
+        for (const entry of nearby) {
+          const weight = 1 / (0.01 + entry.distance);
+          const flowRadians = ((entry.sample.direction + 180) * Math.PI) / 180;
+          totalWeight += weight;
+          eastFlow += Math.sin(flowRadians) * weight;
+          northFlow += Math.cos(flowRadians) * weight;
+          averageKnots += entry.sample.speed * weight;
+        }
+        if (totalWeight) {
+          const knots = averageKnots / totalWeight;
+          const metersPerSecond = knots * 0.514444 * 150; // Exaggerated visually; geographic movement stays map-anchored.
+          const latitudeRadians = (particle.lat * Math.PI) / 180;
+          particle.lng += (eastFlow / totalWeight) * metersPerSecond * deltaSeconds / (metersPerLatitudeDegree * Math.max(0.12, Math.cos(latitudeRadians)));
+          particle.lat += (northFlow / totalWeight) * metersPerSecond * deltaSeconds / metersPerLatitudeDegree;
+          particle.knots = knots;
+        }
+        particle.age += deltaSeconds;
+        particle.trail.push([particle.lng, particle.lat]);
+        if (particle.trail.length > 7) particle.trail.shift();
+        const visible = viewport.contains([particle.lng, particle.lat]);
+        if (!visible || particle.age >= particle.maxAge || particle.lat < -84 || particle.lat > 84) {
+          Object.assign(particle, makeParticle());
+          continue;
+        }
+        if (particle.trail.length > 1) {
+          features.push({
+            type: "Feature",
+            properties: { speedKnots: particle.knots, opacity: Math.min(0.72, 0.2 + particle.trail.length * 0.075) },
+            geometry: { type: "LineString", coordinates: particle.trail },
+          });
+        }
+      }
+      source.setData({ type: "FeatureCollection", features });
+    }, 80);
+
+    return () => {
+      window.clearInterval(interval);
+      if (map.getLayer(flowLayerId)) map.setLayoutProperty(flowLayerId, "visibility", "none");
+      source.setData(EMPTY_FC);
+    };
+  }, [mapReady, activeLayers.wind, data.wind_samples]);
 
   // Draw real, heading-oriented vessel silhouettes in a lightweight 2D canvas.
   // This bypasses MapLibre's sprite atlas and font glyphs for the main ship layer.
@@ -3656,6 +3764,7 @@ function LTmap({
       onMapCenter?.({
         lat: c.lat,
         lng: c.lng,
+        zoom: map.getZoom(),
         bounds: b
           ? {
               west: b.getWest(),
@@ -3866,6 +3975,7 @@ function LTmap({
       onTrackShip?.(ship.mmsi);
       setSelectedShip(ship as unknown as Record<string, unknown>);
       setRouteTelemetryShip(ship as unknown as Record<string, unknown>);
+      setShowVesselFullDetails(true);
     },
     [onTrackShip],
   );
@@ -3905,7 +4015,8 @@ function LTmap({
           }}
         />
       )}
-      {routeTelemetryShip && <ShipRoutePlaybackBar key={String(routeTelemetryShip.mmsi ?? routeTelemetryShip.id ?? "ship")} ship={routeTelemetryShip} onClose={() => setRouteTelemetryShip(null)} />}
+      {routeTelemetryShip && <ShipRoutePlaybackBar key={String(routeTelemetryShip.mmsi ?? routeTelemetryShip.id ?? "ship")} ship={routeTelemetryShip} onClose={() => setRouteTelemetryShip(null)} onToggleDetails={() => setShowVesselFullDetails((visible) => !visible)} detailsOpen={showVesselFullDetails} />}
+      {showVesselFullDetails && routeTelemetryShip && <VesselFullDetailsPanel ship={routeTelemetryShip} onClose={() => setShowVesselFullDetails(false)} />}
       {mapReady && (
         <MapPopups
           mapRef={mapRef}
@@ -3913,7 +4024,10 @@ function LTmap({
           onTrackShip={onTrackShip}
           onShipSelect={(ship) => {
             setSelectedShip(ship);
-            if (ship) setRouteTelemetryShip(ship);
+            if (ship) {
+              setRouteTelemetryShip(ship);
+              setShowVesselFullDetails(true);
+            }
           }}
           liveTrackedShip={liveTrackedShip}
         />

@@ -36,7 +36,7 @@ export interface LTmapProps {
   mapStyle?: string;
   theme?: 'core' | 'ghost';
   arcgisLayers?: Array<{ id: string; title: string; geojson: GeoJSON.GeoJSON | Record<string, unknown>; color?: string; opacity?: number }>;
-  onMapCenter?: (coords: { lat: number; lng: number; bounds?: { west: number; south: number; east: number; north: number } }) => void;
+  onMapCenter?: (coords: { lat: number; lng: number; zoom: number; bounds?: { west: number; south: number; east: number; north: number } }) => void;
   showMapControls?: boolean;
   onTrackShip?: (mmsi: string | number | null) => void;
   onShipSelect?: (ship: Record<string, unknown> | null) => void;

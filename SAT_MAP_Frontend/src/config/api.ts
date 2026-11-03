@@ -20,6 +20,7 @@ export const API_ENDPOINTS = {
   STATS: `${API_PREFIX}/stats`,
   SATELLITE_INFO: `${API_PREFIX}/satellite-info`,
   VESSEL_INFO: `${API_PREFIX}/vessel-info`,
+  WIND: `${API_PREFIX}/wind`,
   REVERSE_GEOCODE: `${API_PREFIX}/geocode/reverse`,
   MAP_STYLE: `${API_PREFIX}/map/style`,
   MAP_IMAGERY: `${API_PREFIX}/map/imagery`,
@@ -84,6 +85,12 @@ export const api = {
     }
     const query = params.toString();
     return getApiUrl(`${API_ENDPOINTS.MARITIME}${query ? `?${query}` : ''}`);
+  },
+  maritimeShip: (mmsi: string | number) =>
+    getApiUrl(`${API_ENDPOINTS.MARITIME}/ships/${encodeURIComponent(String(mmsi))}`),
+  wind: (bounds: { west: number; south: number; east: number; north: number }, zoom = 0) => {
+    const params = new URLSearchParams([...Object.entries(bounds).map(([key, value]) => [key, String(value)] as [string, string]), ["zoom", String(zoom)]]);
+    return getApiUrl(`${API_ENDPOINTS.WIND}?${params.toString()}`);
   },
   satellites: (options?: { categories?: string[]; bounds?: { west: number; south: number; east: number; north: number } }) => {
     const params = new URLSearchParams();

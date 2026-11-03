@@ -3,9 +3,10 @@
 import asyncio
 import hashlib
 import logging
+import math
 import re
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, Response
@@ -14,7 +15,7 @@ from fastapi.responses import JSONResponse
 from ..urls import (
     ARCGIS_IMAGERY_TILE, BIGDATACLOUD_REVERSE, CARTO_DARK_STYLE,
     CARTO_TILE_HOST, TERRARIUM_TILE, USGS_EARTHQUAKES,
-    WIKIPEDIA_API, WIKIPEDIA_SUMMARY,
+    WIKIPEDIA_API, WIKIPEDIA_SUMMARY, OPEN_METEO_FORECAST,
 )
 
 logger = logging.getLogger("ltmap.providers")
@@ -25,6 +26,8 @@ _map_style_cache: dict | None = None
 _map_style_cached_at = 0.0
 _map_style_cache_lock = asyncio.Lock()
 MAP_STYLE_CACHE_TTL = 86_400
+_wind_cache: dict[str, tuple[float, dict]] = {}
+WIND_CACHE_TTL = 120
 
 
 async def open_client() -> None:
@@ -204,6 +207,97 @@ async def reverse_geocode(
             "countryName": None,
             "geocodeUnavailable": True,
         }
+
+
+@router.get("/wind")
+async def viewport_wind(
+    west: float = Query(..., ge=-540, le=540),
+    south: float = Query(..., ge=-90, le=90),
+    east: float = Query(..., ge=-540, le=540),
+    north: float = Query(..., ge=-90, le=90),
+    zoom: float = Query(0, ge=0, le=24),
+):
+    """Fetch current 10 m wind samples for a small grid covering the map viewport."""
+    south, north = max(-85.0, min(south, north)), min(85.0, max(south, north))
+    if north <= south:
+        raise HTTPException(status_code=400, detail="Viewport latitude bounds are invalid")
+
+    east_unwrapped = east
+    while east_unwrapped <= west:
+        east_unwrapped += 360
+    span = min(360.0, east_unwrapped - west)
+    if span <= 0:
+        raise HTTPException(status_code=400, detail="Viewport longitude bounds are invalid")
+    height = north - south
+    grid_spacing = max(1.5, 9 / (2 ** (max(4.5, zoom) - 4.5) ** 0.5))
+    columns = min(12, max(4, math.ceil(span / grid_spacing)))
+    rows = min(8, max(3, math.ceil(height / grid_spacing)))
+    cache_key = ",".join(f"{value:.2f}" for value in (west, south, east, north)) + f",z{zoom:.1f}"
+    cached = _wind_cache.get(cache_key)
+    now = time.monotonic()
+    if cached and now - cached[0] < WIND_CACHE_TTL:
+        return cached[1]
+
+    coordinates: list[tuple[float, float]] = []
+    for row in range(rows):
+        lat = south + height * (row + 0.5) / rows
+        for column in range(columns):
+            lng = west + span * (column + 0.5) / columns
+            lng = ((lng + 180) % 360) - 180
+            coordinates.append((round(lat, 4), round(lng, 4)))
+
+    params = urlencode({
+        "latitude": ",".join(str(lat) for lat, _ in coordinates),
+        "longitude": ",".join(str(lng) for _, lng in coordinates),
+        "current": "wind_speed_10m,wind_direction_10m",
+        "wind_speed_unit": "kn",
+        "timezone": "UTC",
+    })
+    try:
+        response = await _get(f"{OPEN_METEO_FORECAST}?{params}")
+        payload = response.json()
+        locations = payload if isinstance(payload, list) else [payload]
+        samples = []
+        for index, location in enumerate(locations):
+            current = location.get("current") or {}
+            speed = current.get("wind_speed_10m")
+            direction = current.get("wind_direction_10m")
+            if speed is None or direction is None or index >= len(coordinates):
+                continue
+            lat, lng = coordinates[index]
+            samples.append({
+                "lat": float(location.get("latitude", lat)),
+                "lng": float(location.get("longitude", lng)),
+                "speedKnots": round(float(speed), 1),
+                "directionDeg": round(float(direction)) % 360,
+                "time": current.get("time"),
+            })
+        if not samples:
+            raise HTTPException(status_code=502, detail="Wind provider returned no viewport samples")
+
+        mean_speed = sum(sample["speedKnots"] for sample in samples) / len(samples)
+        mean_sin = sum(math.sin(math.radians(sample["directionDeg"])) for sample in samples)
+        mean_cos = sum(math.cos(math.radians(sample["directionDeg"])) for sample in samples)
+        mean_direction = round(math.degrees(math.atan2(mean_sin, mean_cos)) % 360)
+        result = {
+            "provider": "Open-Meteo",
+            "heightMeters": 10,
+            "speedUnit": "knots",
+            "timestamp": samples[0]["time"],
+            "sampleCount": len(samples),
+            "meanSpeedKnots": round(mean_speed, 1),
+            "meanDirectionDeg": mean_direction,
+            "samples": samples,
+        }
+        if len(_wind_cache) > 128:
+            _wind_cache.clear()
+        _wind_cache[cache_key] = (now, result)
+        return result
+    except HTTPException:
+        raise
+    except (TypeError, ValueError, KeyError) as exc:
+        logger.warning("Wind provider returned an invalid response: %s", exc)
+        raise HTTPException(status_code=502, detail="Wind provider response could not be read") from exc
 
 
 @router.get("/earthquakes")

@@ -3,7 +3,7 @@
 import { memo, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Satellite, Ship, SunMoon,
+  Satellite, Ship, SunMoon, Wind,
 } from 'lucide-react';
 
 interface LayerPanelProps {
@@ -54,6 +54,14 @@ const LAYER_GROUPS: LayerGroupDef[] = [
       { key: 'sat_navigation', label: 'GPS / Navigation', dataKey: 'satellites', catKey: 'navigation' },
       { key: 'sat_earth', label: 'Earth Observation', dataKey: 'satellites', catKey: 'earth_obs' },
       { key: 'rf_coverage', label: 'Geometric coverage', dataKey: '', description: 'Estimated visibility area; not a verified RF beam', color: '#00E5FF' },
+    ],
+  },
+  {
+    label: 'WIND',
+    fullLabel: 'WIND CONDITIONS',
+    icon: Wind,
+    layers: [
+      { key: 'wind', label: 'Wind flow', dataKey: 'wind_samples', description: 'Zoom in for animated 10 m wind · Open-Meteo', color: '#7dd3fc' },
     ],
   },
   {
@@ -163,6 +171,7 @@ function LayerPanel({
 
   const getCount = (dk: string, catKey?: string): number | null => {
     if (!dk) return null;
+    if (dk === 'wind_samples' && (!Array.isArray(data.wind_samples) || data.wind_samples.length === 0)) return null;
     if (dk === 'satellites' && catKey) {
       const satelliteCounts = data.satellite_category_counts as Record<string, number> | undefined;
       return satelliteCounts?.[catKey] ?? 0;

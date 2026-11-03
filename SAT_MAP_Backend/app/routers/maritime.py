@@ -12,13 +12,31 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from ..services import ais_stream, ais_db
 
 logger = logging.getLogger("ltmap.maritime")
 
 router = APIRouter(prefix="/api/maritime", tags=["maritime"])
+
+
+@router.get("/ships/{mmsi}")
+async def vessel_details(mmsi: int):
+    """Return complete current AIS metadata and recent stored route fixes for one vessel."""
+    ship = await ais_stream.get_ship(mmsi)
+    stored = await ais_db.get_ship_from_db(mmsi)
+    if not ship and not stored:
+        raise HTTPException(status_code=404, detail="Vessel not found")
+    # Prefer fresh AIS fields while taking the durable route history from the DB.
+    details = {**(stored or {}), **(ship or {})}
+    if stored and len(stored.get("track", [])) > len(details.get("track", [])):
+        details["track"] = stored["track"]
+    details["trackPointCount"] = max(
+        int(details.get("trackPointCount") or 0), len(details.get("track", []))
+    )
+    details["dataSource"] = "AIS live cache + stored AIS history" if ship and stored else "AIS live cache" if ship else "AIS database"
+    return details
 
 # ── Broadcast interval for the full-snapshot WebSocket ──────────────────────────
 WS_BROADCAST_INTERVAL = 5.0  # seconds between pushes
