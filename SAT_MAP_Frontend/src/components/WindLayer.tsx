@@ -43,11 +43,12 @@ export default function WindLayer({ map }: { map: Map }) {
         } else {
           const bounds: [number, number, number, number] = [-180, 89.9, 180, -89.9];
           particles = new wind.NewParticleMotion({
-            id: 'wind-particles', source: windUrl, bounds, sourceType: 'jpeg',
+            id: 'wind-particles', source: windUrl, bounds, sourceType: 'auto',
             mapRuntime: 'maplibre', readyForDisplay: true, unit: 'mps', velocityRange: [-50, 50],
-            particleCount: zoom => zoom < 4 ? 12000 : zoom < 8 ? 5000 : 2000,
-            updateInterval: 50, velocityFactor: 0.04, pointSize: 1.3, trailLength: 6,
-            fadeOpacity: 0.8, trailSizeDecay: 0.92,
+            // Keep the field legible at world scale and avoid thousands of competing dashes.
+            particleCount: zoom => zoom < 4 ? 4200 : zoom < 8 ? 1800 : 850,
+            updateInterval: 70, velocityFactor: 0.028, pointSize: 1.05, trailLength: 10,
+            fadeOpacity: 0.72, trailSizeDecay: 0.94, ageThreshold: 0.35, maxAge: 120,
             color: [[0, [160, 212, 242]], [8, [156, 245, 217]], [16, [209, 255, 186]], [30, [255, 244, 184]]],
           });
           try {

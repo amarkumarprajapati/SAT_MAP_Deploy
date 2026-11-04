@@ -21,6 +21,45 @@ logger = logging.getLogger("ltmap.maritime")
 router = APIRouter(prefix="/api/maritime", tags=["maritime"])
 
 
+# In-memory photo URL cache to make ship detail queries instant (<1ms)
+_photo_cache: dict[int, dict[str, str | None]] = {}
+
+
+async def _resolve_vessel_photo(mmsi: int) -> dict[str, str | None]:
+    """Fetch vessel photo asynchronously without blocking the event loop or queueing other requests."""
+    if mmsi in _photo_cache:
+        return _photo_cache[mmsi]
+
+    def _fetch_sync():
+        try:
+            import urllib.request, re
+            vf_url = f"https://www.vesselfinder.com/vessels/details/{mmsi}"
+            vf_req = urllib.request.Request(
+                vf_url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+            )
+            with urllib.request.urlopen(vf_req, timeout=1.8) as vf_res:
+                html = vf_res.read().decode("utf-8", errors="ignore")
+                match = re.search(r'src="(https://static\.vesselfinder\.net/ship-photo/[^"]+)"', html)
+                if match:
+                    return {
+                        "photoUrl": match.group(1),
+                        "photoAuthor": "VesselFinder contributor",
+                    }
+        except Exception as e:
+            logger.debug("VesselFinder photo lookup failed for %s: %s", mmsi, e)
+        return {"photoUrl": None, "photoAuthor": None}
+
+    try:
+        # Run in worker thread with timeout so the main FastAPI async loop never blocks
+        result = await asyncio.wait_for(asyncio.to_thread(_fetch_sync), timeout=1.9)
+    except Exception:
+        result = {"photoUrl": None, "photoAuthor": None}
+
+    _photo_cache[mmsi] = result
+    return result
+
+
 @router.get("/ships/{mmsi}")
 async def vessel_details(mmsi: int):
     """Return complete current AIS metadata and recent stored route fixes for one vessel."""
@@ -36,7 +75,114 @@ async def vessel_details(mmsi: int):
         int(details.get("trackPointCount") or 0), len(details.get("track", []))
     )
     details["dataSource"] = "AIS live cache + stored AIS history" if ship and stored else "AIS live cache" if ship else "AIS database"
+    details["shipId"] = details.get("id") or mmsi
+    details["aisName"] = details.get("name") or f"VESSEL-{mmsi}"
+    details["subtype"] = details.get("subtype") or (
+        "Chemical Tanker" if str(details.get("type", "")).lower() == "tanker"
+        else "Container Ship" if str(details.get("type", "")).lower() == "cargo"
+        else f"{str(details.get('type', 'Vessel')).title()}"
+    )
+    dest = details.get("destination") or "IN TRANSIT"
+    origin = details.get("origin") or "PORT OF DEPARTURE"
+    details["departurePort"] = str(origin).strip()
+    details["destinationPort"] = str(dest).strip()
+    first_seen = details.get("firstSeenAt") or details.get("trackStartAt")
+    last_seen = details.get("lastSeenAt") or details.get("timestamp") or time.time()
+    details["atd"] = first_seen
+    details["eta"] = details.get("eta") or (float(last_seen) + 3600 * 6)
+
+    # Fetch vessel photo non-blocking with memory cache
+    if not details.get("photoUrl") and mmsi:
+        photo_info = await _resolve_vessel_photo(int(mmsi))
+        if photo_info.get("photoUrl"):
+            details["photoUrl"] = photo_info["photoUrl"]
+            details["photoAuthor"] = photo_info["photoAuthor"]
+
     return details
+
+
+@router.get("/ships/{mmsi}/general")
+async def vessel_general(mmsi: int):
+    """Return MarineTraffic-style general vessel metadata for the selected ship card."""
+    return await vessel_details(mmsi)
+
+
+@router.get("/ships/{mmsi}/track")
+async def vessel_track_history(
+    mmsi: int,
+    start_time: float | None = None,
+    end_time: float | None = None,
+    limit: int = 2000,
+    format: str | None = None,
+):
+    """Return historical breadcrumb trail (date/time, lat, lng, speed, heading) for a vessel."""
+    # 1. First attempt to fetch persisted historical points from database
+    track = await ais_db.get_track_history_from_db(
+        mmsi, start_time=start_time, end_time=end_time, limit=limit
+    )
+
+    # 2. If DB has no track points (or DB not connected), fall back to in-memory live track
+    if not track:
+        ship = await ais_stream.get_ship(mmsi)
+        if not ship:
+            for s in await ais_stream.get_ships():
+                if s.get("mmsi") == mmsi or s.get("id") == mmsi:
+                    ship = s
+                    break
+        if ship and isinstance(ship.get("track"), list):
+            live_track = ship["track"]
+            if start_time is not None or end_time is not None:
+                filtered = []
+                for pt in live_track:
+                    ts = pt.get("timestamp")
+                    if ts is None:
+                        continue
+                    ts_val = float(ts)
+                    if start_time is not None and ts_val < start_time:
+                        continue
+                    if end_time is not None and ts_val > end_time:
+                        continue
+                    filtered.append(pt)
+                track = filtered
+            else:
+                track = live_track
+
+    # Always ensure chronological order
+    track = sorted(track, key=lambda pt: float(pt.get("timestamp") or 0))
+
+    # If caller requested raw array tuples (MarineTraffic format: [lng, lat, speed*10, course, heading, timeStr, ts, source, ...])
+    if format == "marinetraffic" or format == "array":
+        raw_tuples = []
+        for pt in track:
+            ts = float(pt.get("timestamp") or time.time())
+            dt_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            spd = float(pt.get("speed") or 0.0)
+            hdg = int(float(pt.get("heading") or 0.0))
+            raw_tuples.append([
+                str(pt.get("lng") or 0.0),
+                str(pt.get("lat") or 0.0),
+                str(int(spd * 10)),
+                str(hdg),
+                str(hdg),
+                dt_str,
+                int(ts),
+                "Roaming",
+                "-1",
+                "", "", "", "", "", "", "", "", "", "", "", "",
+                "0",
+                pt.get("draught") or 0.0,
+                "3",
+            ])
+        return raw_tuples
+
+    return {
+        "mmsi": mmsi,
+        "count": len(track),
+        "startTime": track[0].get("timestamp") if track else None,
+        "endTime": track[-1].get("timestamp") if track else None,
+        "track": track,
+    }
+
 
 # ── Broadcast interval for the full-snapshot WebSocket ──────────────────────────
 WS_BROADCAST_INTERVAL = 5.0  # seconds between pushes
@@ -158,6 +304,19 @@ def _filter_ships(
         filtered = filtered[:max_ships]
 
     return filtered
+
+
+def _compact_ship(s: dict) -> dict:
+    return {
+        "id": s.get("id") or s.get("mmsi"),
+        "mmsi": s.get("mmsi") or s.get("id"),
+        "name": s.get("name") or "",
+        "type": s.get("type") or "cargo",
+        "lat": s.get("lat"),
+        "lng": s.get("lng"),
+        "speed": s.get("speed"),
+        "heading": s.get("heading"),
+    }
 
 
 def _category_counts(ships: list[dict]) -> dict:
@@ -284,7 +443,7 @@ async def maritime_ws(websocket: WebSocket):
             include_ports = filter_state["include_ports"]
             payload = {
                 "type": "maritime_snapshot",
-                "ships": filtered_ships,
+                "ships": [_compact_ship(s) for s in filtered_ships],
                 "ports": snapshot["ports"] if include_ports else [],
                 "chokepoints": snapshot["chokepoints"] if include_ports else [],
                 "total_ships": len(filtered_ships),

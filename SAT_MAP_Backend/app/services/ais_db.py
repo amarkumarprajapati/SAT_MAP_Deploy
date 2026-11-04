@@ -545,6 +545,48 @@ async def load_ships_from_db() -> dict[int, dict[str, Any]]:
     return ships
 
 
+async def get_track_history_from_db(
+    mmsi: int | str,
+    start_time: float | None = None,
+    end_time: float | None = None,
+    limit: int = 2000
+) -> list[dict[str, Any]]:
+    """Query historical track fixes for a vessel, optionally filtered by timestamp range."""
+    pool = database._pool
+    sqlite = database._sqlite
+    if pool is None and sqlite is None:
+        return []
+    try:
+        clauses = ["mmsi = %s"]
+        params: list[Any] = [int(mmsi)]
+        if start_time is not None:
+            clauses.append("recorded_at >= %s")
+            params.append(float(start_time))
+        if end_time is not None:
+            clauses.append("recorded_at <= %s")
+            params.append(float(end_time))
+        params.append(max(1, min(int(limit), 5000)))
+        where_sql = " AND ".join(clauses)
+        query = f"SELECT lat, lng, speed, heading, recorded_at FROM ais_track_points WHERE {where_sql} ORDER BY recorded_at ASC LIMIT %s"
+        if pool is not None:
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(query, tuple(params))
+                    rows = await cur.fetchall()
+        else:
+            q_sqlite = query.replace("%s", "?")
+            cur = sqlite.cursor()
+            cur.execute(q_sqlite, tuple(params))
+            rows = cur.fetchall()
+        return [
+            {"lat": r[0], "lng": r[1], "speed": r[2], "heading": r[3], "timestamp": r[4]}
+            for r in rows
+        ]
+    except Exception:
+        logger.exception("Failed to query track history for MMSI %s", mmsi)
+        return []
+
+
 async def get_ship_from_db(mmsi: int | str) -> dict[str, Any] | None:
     """Load one vessel and its most recent 1,000 persisted AIS fixes."""
     pool = database._pool

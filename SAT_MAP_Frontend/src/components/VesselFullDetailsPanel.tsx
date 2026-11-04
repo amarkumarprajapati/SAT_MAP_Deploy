@@ -71,7 +71,7 @@ export default function VesselFullDetailsPanel({
   const distance = Number(data?.trackDistanceKm ?? ship.trackDistanceKm ?? 0);
 
   return (
-    <aside className="pointer-events-auto fixed right-3 top-[76px] z-[245] flex max-h-[calc(100vh-190px)] max-lg:top-[72px] max-lg:max-h-[46vh] w-[min(370px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-cyan-400/30 bg-[#07101df5] text-white shadow-[0_18px_60px_rgba(0,0,0,.62)] backdrop-blur-2xl" aria-label="Full vessel details">
+    <aside className="pointer-events-auto fixed right-3 top-[76px] bottom-[36px] z-[250] flex w-[370px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-2xl border border-cyan-400/30 bg-[#07101df5] text-white shadow-[0_18px_60px_rgba(0,0,0,.62)] backdrop-blur-2xl" aria-label="Full vessel details">
       <header className="flex items-start justify-between gap-3 border-b border-white/10 bg-gradient-to-r from-cyan-950/50 to-transparent p-3">
         <div className="flex min-w-0 items-start gap-2.5">
           <span className="mt-0.5 rounded-lg border border-cyan-300/25 bg-cyan-300/10 p-2 text-cyan-300"><Ship size={16} /></span>

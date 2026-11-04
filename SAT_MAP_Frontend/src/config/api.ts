@@ -87,6 +87,17 @@ export const api = {
   },
   maritimeShip: (mmsi: string | number) =>
     getApiUrl(`${API_ENDPOINTS.MARITIME}/ships/${encodeURIComponent(String(mmsi))}`),
+  maritimeShipGeneral: (mmsi: string | number) =>
+    getApiUrl(`${API_ENDPOINTS.MARITIME}/ships/${encodeURIComponent(String(mmsi))}/general`),
+  maritimeShipTrack: (mmsi: string | number, options?: { startTime?: number; endTime?: number; limit?: number; format?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.startTime !== undefined) params.set('start_time', String(options.startTime));
+    if (options?.endTime !== undefined) params.set('end_time', String(options.endTime));
+    if (options?.limit !== undefined) params.set('limit', String(options.limit));
+    if (options?.format !== undefined) params.set('format', options.format);
+    const query = params.toString();
+    return getApiUrl(`${API_ENDPOINTS.MARITIME}/ships/${encodeURIComponent(String(mmsi))}/track${query ? `?${query}` : ''}`);
+  },
   satellites: (options?: { categories?: string[]; bounds?: { west: number; south: number; east: number; north: number } }) => {
     const params = new URLSearchParams();
     if (options?.categories?.length) params.set('categories', options.categories.join(','));

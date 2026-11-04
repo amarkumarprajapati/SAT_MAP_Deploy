@@ -215,6 +215,29 @@ html, body {
   from { transform: translateX(0); }
   to { transform: translateX(-24px); }
 }
+
+/* Reserve the footer and news ticker below the vessel cards. */
+.vessel-card-dock {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(36px + env(safe-area-inset-bottom));
+  width: min(840px, calc(100vw - 32px));
+  z-index: 240;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.vessel-card-dock > section {
+  width: 100%;
+}
+.vessel-card-dock[data-details-open="true"] {
+  /* Route telemetry stays docked at the bottom center */
+}
+@media (max-height: 600px) {
+  .vessel-card-dock { bottom: calc(28px + env(safe-area-inset-bottom)); }
+}
 .marine-wave { fill: none; stroke: currentColor; stroke-width: 1.2; animation: marine-wave-drift 4s linear infinite; }
 .marine-wave-two { animation-duration: 6s; opacity: .65; }
 @media (prefers-reduced-motion: reduce) { .marine-wave { animation: none; } }

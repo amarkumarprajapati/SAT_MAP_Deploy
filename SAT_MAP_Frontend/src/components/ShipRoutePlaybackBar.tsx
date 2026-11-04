@@ -1,14 +1,35 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pause, Play, RotateCcw, Route, PanelRightOpen, X } from "lucide-react";
-import { calculateVoyageDetails } from "@/lib/maritime-route";
+import {
+  Pause,
+  Play,
+  RotateCcw,
+  Gauge,
+  Crosshair,
+  Repeat,
+  X,
+  Compass,
+  Navigation,
+  Activity,
+  MapPin,
+  Clock,
+  Loader2,
+} from "lucide-react";
+import { api } from "@/config/api";
 
-type TrackPoint = { lat: number; lng: number; timestamp?: number | string; speed?: number };
+type TrackPoint = {
+  lat: number;
+  lng: number;
+  timestamp?: number | string;
+  speed?: number;
+  heading?: number;
+};
 
 function timestampMs(value: unknown): number | null {
   const numeric = Number(value);
-  if (Number.isFinite(numeric) && numeric > 0) return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+  if (Number.isFinite(numeric) && numeric > 0)
+    return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
   if (typeof value === "string" && value.trim()) {
     const parsed = Date.parse(value);
     if (Number.isFinite(parsed)) return parsed;
@@ -16,105 +37,206 @@ function timestampMs(value: unknown): number | null {
   return null;
 }
 
-function formatDateTime(value: unknown): string {
+// Format UTC timestamp like: "04 NOV 2026 08:23:13 UTC"
+function formatUtcDateTime(value: unknown): string {
   const ms = timestampMs(value);
-  return ms === null ? "TIME NOT REPORTED" : new Intl.DateTimeFormat(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(ms);
+  if (ms === null) return "LIVE UTC TELEMETRY";
+  const d = new Date(ms);
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const months = [
+    "JAN",
+    "FEB",
+    "MAR",
+    "APR",
+    "MAY",
+    "JUN",
+    "JUL",
+    "AUG",
+    "SEP",
+    "OCT",
+    "NOV",
+    "DEC",
+  ];
+  const month = months[d.getUTCMonth()];
+  const year = d.getUTCFullYear();
+  const hours = String(d.getUTCHours()).padStart(2, "0");
+  const minutes = String(d.getUTCMinutes()).padStart(2, "0");
+  const seconds = String(d.getUTCSeconds()).padStart(2, "0");
+  return `${day} ${month} ${year} ${hours}:${minutes}:${seconds} UTC`;
 }
 
-function formatDuration(milliseconds: number | null): string {
-  if (milliseconds === null || !Number.isFinite(milliseconds) || milliseconds < 0) return "TIME NOT REPORTED";
-  const totalMinutes = Math.floor(milliseconds / 60_000);
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor((totalMinutes % 1440) / 60);
-  const minutes = totalMinutes % 60;
-  if (days) return `${days}d ${hours}h ${minutes}m`;
-  if (hours) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
+export default function ShipRoutePlaybackBar({
+  ship,
+  onClose,
+}: {
+  ship: Record<string, unknown>;
+  onClose: () => void;
+}) {
+  const shipId = String(ship.mmsi ?? ship.id ?? "");
+  const [fetchedTrack, setFetchedTrack] = useState<TrackPoint[] | null>(null);
+  const [loadingTrack, setLoadingTrack] = useState(false);
 
-export default function ShipRoutePlaybackBar({ ship, onClose, onToggleDetails, detailsOpen }: { ship: Record<string, unknown>; onClose: () => void; onToggleDetails: () => void; detailsOpen: boolean }) {
-  const route = useMemo(() => (Array.isArray(ship.track) ? ship.track : []).map((point) => ({ lat: Number(point.lat), lng: Number(point.lng), timestamp: point.timestamp as number | string | undefined, speed: Number(point.speed) })).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)), [ship.track]) as TrackPoint[];
+  // Auto-fetch complete historical track from the API
+  useEffect(() => {
+    if (!shipId) return;
+    const controller = new AbortController();
+    setLoadingTrack(true);
+
+    fetch(api.maritimeShipTrack(shipId), { signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.track) && data.track.length > 0) {
+          const parsed = data.track
+            .map((pt: Record<string, unknown>) => ({
+              lat: Number(pt.lat),
+              lng: Number(pt.lng),
+              timestamp: pt.timestamp as number | string | undefined,
+              speed: Number(pt.speed),
+              heading: Number(pt.heading ?? pt.course),
+            }))
+            .filter(
+              (pt: TrackPoint) =>
+                Number.isFinite(pt.lat) && Number.isFinite(pt.lng),
+            );
+          setFetchedTrack(parsed);
+        } else if (Array.isArray(data) && data.length > 0) {
+          const parsed: TrackPoint[] = [];
+          for (const tuple of data) {
+            if (Array.isArray(tuple)) {
+              const lng = Number(tuple[0]);
+              const lat = Number(tuple[1]);
+              const speed = Number(tuple[2]) / 10.0;
+              const heading = Number(tuple[4] ?? tuple[3]);
+              const rawTs = tuple[6] ?? tuple[5];
+              const timestamp =
+                typeof rawTs === "string" || typeof rawTs === "number"
+                  ? rawTs
+                  : undefined;
+              if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                parsed.push({ lat, lng, speed, heading, timestamp });
+              }
+            }
+          }
+          setFetchedTrack(parsed);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setLoadingTrack(false);
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [shipId]);
+
+  const rawRoute = useMemo(() => {
+    if (fetchedTrack && fetchedTrack.length > 0) {
+      return fetchedTrack;
+    }
+    return (Array.isArray(ship.track) ? ship.track : [])
+      .map((point: Record<string, unknown>) => ({
+        lat: Number(point.lat),
+        lng: Number(point.lng),
+        timestamp: point.timestamp as number | string | undefined,
+        speed: Number(point.speed),
+        heading: Number(point.heading ?? point.course),
+      }))
+      .filter(
+        (point: TrackPoint) =>
+          Number.isFinite(point.lat) && Number.isFinite(point.lng),
+      );
+  }, [fetchedTrack, ship.track]);
+
+  const route = rawRoute as TrackPoint[];
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState<1 | 2 | 5>(1);
+  const [currentUtcTime, setCurrentUtcTime] = useState<string>("");
+
+  // Live interpolated metrics for user telemetry display
+  const [currentLat, setCurrentLat] = useState<number>(Number(ship.lat || 0));
+  const [currentLng, setCurrentLng] = useState<number>(Number(ship.lng || 0));
+  const [currentSpeed, setCurrentSpeed] = useState<number>(
+    Number(ship.speed || 0),
+  );
+  const [currentHeading, setCurrentHeading] = useState<number>(
+    Number(ship.heading || ship.course || 0),
+  );
+
   const progressRef = useRef(0);
   const startTimeRef = useRef(0);
   const animationRef = useRef<number | null>(null);
-  const shipId = String(ship.mmsi ?? ship.id ?? "");
-  const name = String(ship.name ?? `MMSI ${shipId}`).trim();
-  const category = String(ship.type ?? "cargo").toLowerCase();
-  const vesselInfo = useMemo(() => calculateVoyageDetails(ship), [ship]);
-  const duration = Math.max(7_000, Math.min(24_000, route.length * 180));
-  const currentPoint: TrackPoint = { lat: Number(ship.lat), lng: Number(ship.lng) };
-  const fallbackPoint = { lat: Number.isFinite(currentPoint.lat) ? currentPoint.lat : 0, lng: Number.isFinite(currentPoint.lng) ? currentPoint.lng : 0 };
-  const start = route[0] ?? fallbackPoint;
-  const end = route[route.length - 1] ?? fallbackPoint;
-  const routeStats = useMemo(() => {
-    let distanceKm = 0;
-    for (let i = 1; i < route.length; i++) {
-      const a = route[i - 1], b = route[i];
-      const radians = Math.PI / 180;
-      const dLat = (b.lat - a.lat) * radians;
-      const dLng = (b.lng - a.lng) * radians;
-      const value = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * radians) * Math.cos(b.lat * radians) * Math.sin(dLng / 2) ** 2;
-      distanceKm += 6371.0088 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(Math.max(0, 1 - value)));
-    }
-    const speeds = route.map((point) => Number(point.speed)).filter((speed) => Number.isFinite(speed) && speed >= 0);
-    const segmentSpeeds: number[] = [];
-    for (let i = 1; i < route.length; i++) {
-      const from = timestampMs(route[i - 1].timestamp);
-      const to = timestampMs(route[i].timestamp);
-      if (from === null || to === null || to <= from) continue;
-      const a = route[i - 1], b = route[i];
-      const radians = Math.PI / 180;
-      const dLat = (b.lat - a.lat) * radians;
-      const dLng = (b.lng - a.lng) * radians;
-      const value = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * radians) * Math.cos(b.lat * radians) * Math.sin(dLng / 2) ** 2;
-      const segmentKm = 6371.0088 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(Math.max(0, 1 - value)));
-      const knots = segmentKm / ((to - from) / 3_600_000) / 1.852;
-      if (Number.isFinite(knots) && knots <= 90) segmentSpeeds.push(knots);
-    }
-    const reportedDistance = Number(ship.trackDistanceKm);
-    const startMs = timestampMs(ship.trackStartAt ?? ship.firstSeenAt ?? route[0]?.timestamp);
-    const endMs = timestampMs(ship.lastSeenAt ?? ship.timestamp ?? route.at(-1)?.timestamp);
-    const elapsedMs = startMs !== null && endMs !== null ? Math.max(0, endMs - startMs) : null;
-    const totalDistanceKm = Number.isFinite(reportedDistance) && reportedDistance > 0 ? reportedDistance : distanceKm;
-    const estimatedAverageKnots = elapsedMs && elapsedMs > 0 ? totalDistanceKm / (elapsedMs / 3_600_000) / 1.852 : null;
-    const currentSpeedValue = Number(ship.speed ?? ship.sog);
-    const hasCurrentAisSpeed = Number.isFinite(currentSpeedValue) && currentSpeedValue >= 0;
-    return {
-      distanceKm: totalDistanceKm,
-      durationMs: elapsedMs,
-      startTime: startMs,
-      endTime: endMs,
-      averageSpeed: speeds.length ? speeds.reduce((sum, speed) => sum + speed, 0) / speeds.length : estimatedAverageKnots ?? (segmentSpeeds.length ? segmentSpeeds.reduce((sum, speed) => sum + speed, 0) / segmentSpeeds.length : null),
-      maxSpeed: speeds.length || segmentSpeeds.length ? Math.max(...speeds, ...segmentSpeeds) : null,
-      currentSpeed: hasCurrentAisSpeed ? currentSpeedValue : segmentSpeeds.at(-1) ?? null,
-      currentCourse: Number.isFinite(Number(ship.heading ?? ship.course)) ? Number(ship.heading ?? ship.course) : null,
-      averageIsEstimated: speeds.length === 0 && (estimatedAverageKnots !== null || segmentSpeeds.length > 0),
-      peakIsEstimated: speeds.length === 0 && segmentSpeeds.length > 0,
-      currentSpeedEstimated: !hasCurrentAisSpeed && segmentSpeeds.length > 0,
-      lastSeen: endMs,
-    };
-  }, [route, ship.trackDistanceKm, ship.trackStartAt, ship.firstSeenAt, ship.lastSeenAt, ship.timestamp, ship.speed, ship.sog, ship.heading, ship.course]);
-  const lastFixAge = (() => {
-    const timestamp = Number(routeStats.lastSeen);
-    if (!Number.isFinite(timestamp)) return "LIVE FEED";
-    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-    return seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)}m ago`;
-  })();
 
-  const emitPosition = useCallback((fraction: number, started = false) => {
-    if (route.length < 2) return;
-    const segment = fraction * (route.length - 1);
-    const index = Math.min(route.length - 2, Math.floor(segment));
-    const portion = Math.max(0, segment - index);
-    const a = route[index], b = route[index + 1];
-    const lat = a.lat + (b.lat - a.lat) * portion;
-    const lngDelta = ((b.lng - a.lng + 540) % 360) - 180;
-    const lng = ((a.lng + lngDelta * portion + 540) % 360) - 180;
-    const heading = (Math.atan2(Math.sin((b.lng - a.lng) * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180), Math.cos(a.lat * Math.PI / 180) * Math.sin(b.lat * Math.PI / 180) - Math.sin(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.cos((b.lng - a.lng) * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
-    window.dispatchEvent(new CustomEvent("ltmap:ship-route-playback", { detail: { ship, route, point: { lat, lng, heading }, progress: fraction, started } }));
-  }, [route, ship]);
+  const shipName = String(ship.name || `VESSEL ${shipId}`).toUpperCase();
+  const vesselType = String(ship.type || "CARGO").toUpperCase();
+
+  const duration = useMemo(
+    () => Math.max(8_000, Math.min(35_000, route.length * 250)) / playbackSpeed,
+    [route.length, playbackSpeed],
+  );
+
+  const emitPosition = useCallback(
+    (fraction: number, started = false) => {
+      if (route.length < 2) return;
+      const segment = fraction * (route.length - 1);
+      const index = Math.min(route.length - 2, Math.floor(segment));
+      const portion = Math.max(0, segment - index);
+      const a = route[index],
+        b = route[index + 1];
+      const lat = a.lat + (b.lat - a.lat) * portion;
+      const lngDelta = ((b.lng - a.lng + 540) % 360) - 180;
+      const lng = ((a.lng + lngDelta * portion + 540) % 360) - 180;
+      const heading =
+        (Math.atan2(
+          Math.sin(((b.lng - a.lng) * Math.PI) / 180) *
+            Math.cos((b.lat * Math.PI) / 180),
+          Math.cos((a.lat * Math.PI) / 180) *
+            Math.sin((b.lat * Math.PI) / 180) -
+            Math.sin((a.lat * Math.PI) / 180) *
+              Math.cos((b.lat * Math.PI) / 180) *
+              Math.cos(((b.lng - a.lng) * Math.PI) / 180),
+        ) *
+          180) /
+          Math.PI +
+        360 % 360;
+
+      const aTime = timestampMs(a.timestamp);
+      const bTime = timestampMs(b.timestamp);
+      const currentTime =
+        aTime && bTime
+          ? aTime + (bTime - aTime) * portion
+          : (aTime ?? bTime ?? null);
+      if (currentTime) {
+        setCurrentUtcTime(formatUtcDateTime(currentTime));
+      }
+
+      const aSpeed = Number(a.speed || 0);
+      const bSpeed = Number(b.speed || 0);
+      const speed = Number.isFinite(aSpeed) && Number.isFinite(bSpeed)
+        ? aSpeed + (bSpeed - aSpeed) * portion
+        : aSpeed || bSpeed || 0;
+
+      setCurrentLat(lat);
+      setCurrentLng(lng);
+      setCurrentHeading(Math.round(heading));
+      setCurrentSpeed(Number(speed.toFixed(1)));
+
+      window.dispatchEvent(
+        new CustomEvent("ltmap:ship-route-playback", {
+          detail: {
+            ship,
+            route,
+            traveledRoute: route,
+            point: { lat, lng, heading, speed, timestamp: currentTime },
+            progress: fraction,
+            started,
+          },
+        }),
+      );
+    },
+    [route, ship],
+  );
 
   useEffect(() => {
     progressRef.current = progress;
@@ -125,7 +247,12 @@ export default function ShipRoutePlaybackBar({ ship, onClose, onToggleDetails, d
     setProgress(0);
     progressRef.current = 0;
     if (animationRef.current != null) cancelAnimationFrame(animationRef.current);
-  }, [shipId]);
+    if (route[0]?.timestamp) {
+      setCurrentUtcTime(formatUtcDateTime(route[0].timestamp));
+    } else {
+      setCurrentUtcTime("UTC TIME NOT REPORTED");
+    }
+  }, [shipId, route]);
 
   useEffect(() => {
     if (!playing || route.length < 2) return;
@@ -136,11 +263,14 @@ export default function ShipRoutePlaybackBar({ ship, onClose, onToggleDetails, d
     let lastUiUpdate = 0;
     let firstFrame = true;
     const frame = (now: number) => {
-      const nextProgress = Math.min(1, Math.max(0, (now - startTimeRef.current) / duration));
+      const nextProgress = Math.min(
+        1,
+        Math.max(0, (now - startTimeRef.current) / duration),
+      );
       progressRef.current = nextProgress;
       emitPosition(nextProgress, firstFrame && initialProgress === 0);
       firstFrame = false;
-      if (now - lastUiUpdate > 80 || nextProgress >= 1) {
+      if (now - lastUiUpdate > 60 || nextProgress >= 1) {
         lastUiUpdate = now;
         setProgress(nextProgress);
       }
@@ -152,7 +282,8 @@ export default function ShipRoutePlaybackBar({ ship, onClose, onToggleDetails, d
     };
     animationRef.current = requestAnimationFrame(frame);
     return () => {
-      if (animationRef.current != null) cancelAnimationFrame(animationRef.current);
+      if (animationRef.current != null)
+        cancelAnimationFrame(animationRef.current);
     };
   }, [playing, duration, route.length, emitPosition]);
 
@@ -162,51 +293,163 @@ export default function ShipRoutePlaybackBar({ ship, onClose, onToggleDetails, d
     setProgress(next);
     emitPosition(next);
   };
+
   const togglePlay = () => {
     if (route.length < 2) return;
     if (progressRef.current >= 1) seek(0);
     setPlaying((value) => !value);
   };
 
+  const cycleSpeed = () => {
+    setPlaybackSpeed((prev) => (prev === 1 ? 2 : prev === 2 ? 5 : 1));
+  };
+
   if (!ship) return null;
+
   return (
-    <section className={`pointer-events-auto fixed bottom-9 left-1/2 z-[240] box-border min-w-0 max-w-[calc(100vw-1rem)] w-[min(760px,calc(100vw-1.5rem))] max-h-[calc(100dvh-3rem)] overflow-x-hidden overflow-y-auto -translate-x-1/2 rounded-2xl border border-cyan-400/30 bg-[#07101df5] px-3 py-2.5 text-white backdrop-blur-2xl sm:px-4${detailsOpen ? " lg:left-[calc((100vw-380px)/2)] lg:max-w-[calc(100vw-400px)] lg:w-[min(760px,calc(100vw-400px))]" : ""}`} aria-label="Vessel route telemetry and playback">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Route size={14} className="shrink-0 text-cyan-300" />
-          <div className="min-w-0">
-            <div className="truncate font-mono text-[10px] font-bold tracking-[.12em] text-cyan-200">ROUTE TELEMETRY · {name.toUpperCase()}</div>
-            <div className="truncate font-mono text-[8px] text-zinc-400" title={`Flag state: ${vesselInfo.countryName} (${vesselInfo.countryCode})`}>{category.toUpperCase()} · {route.length} AIS FIXES · FLAG {vesselInfo.flagEmoji} {vesselInfo.countryName.toUpperCase()} ({vesselInfo.countryCode})</div>
+    <section
+      className="pointer-events-auto box-border min-h-0 min-w-0 w-full max-w-[840px] self-end justify-self-center overflow-visible select-none font-sans px-2"
+      aria-label="Dark Vessel Route Telemetry & Historical Playback"
+    >
+      {/* ── Main Dark Capsule Playback Bar ── */}
+      <div className="flex items-center gap-2.5 rounded-full border border-cyan-500/40 bg-[#09131ff2] px-3.5 py-2.5 text-zinc-200 shadow-[0_16px_50px_rgba(0,0,0,0.85)] backdrop-blur-2xl">
+        {/* Circular Play / Pause Button with Cyan Glow */}
+        <button
+          type="button"
+          onClick={togglePlay}
+          disabled={route.length < 2}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-400 text-slate-950 font-bold shadow-[0_0_16px_rgba(0,229,255,0.4)] hover:bg-cyan-300 disabled:opacity-40 transition cursor-pointer"
+          aria-label={playing ? "Pause route playback" : "Play route"}
+          title={
+            playing
+              ? "Pause playback"
+              : route.length < 2
+                ? "No historical route fixes available"
+                : "Play route based on date and time"
+          }
+        >
+          {loadingTrack ? (
+            <Loader2 size={18} className="animate-spin text-slate-950" />
+          ) : playing ? (
+            <Pause size={17} fill="currentColor" />
+          ) : progress >= 1 ? (
+            <RotateCcw size={17} />
+          ) : (
+            <Play size={17} fill="currentColor" className="ml-0.5" />
+          )}
+        </button>
+
+        {/* Reset / Rewind Icon */}
+        <button
+          type="button"
+          onClick={() => seek(0)}
+          className="p-1.5 text-zinc-400 hover:text-cyan-300 transition cursor-pointer"
+          title="Reset to beginning of route"
+        >
+          <Repeat size={17} />
+        </button>
+
+        {/* Speed multiplier toggle button */}
+        <button
+          type="button"
+          onClick={cycleSpeed}
+          className="flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-zinc-300 hover:text-white font-mono text-[11px] font-bold transition cursor-pointer"
+          title={`Cycle playback speed (current: ${playbackSpeed}x)`}
+        >
+          <Gauge size={14} className="text-cyan-400" />
+          <span>{playbackSpeed}x</span>
+        </button>
+
+        {/* Center Map on Vessel Icon */}
+        <button
+          type="button"
+          onClick={() => emitPosition(progressRef.current)}
+          className="p-1.5 text-zinc-400 hover:text-cyan-300 transition cursor-pointer"
+          title="Center on moving vessel position"
+        >
+          <Crosshair size={17} />
+        </button>
+
+        {/* Center Section: UTC Timestamp readout & Interactive Range Slider */}
+        <div className="relative flex-1 flex flex-col justify-center min-w-[220px] px-1">
+          <div className="flex items-center justify-between text-[11px] font-mono select-text">
+            <span className="font-extrabold tracking-wide text-cyan-300 truncate">
+              {currentUtcTime || "UTC TIME NOT REPORTED"}
+            </span>
+            <span className="text-[10px] text-zinc-400">
+              {Math.round(progress * 100)}%
+            </span>
           </div>
+
+          {/* Timeline range slider */}
+          <input
+            aria-label="Seek through vessel historical track"
+            type="range"
+            min="0"
+            max="1"
+            step="0.001"
+            value={progress}
+            disabled={route.length < 2}
+            onChange={(event) => seek(Number(event.target.value))}
+            className="ship-route-range h-1.5 w-full cursor-pointer accent-cyan-400 disabled:cursor-not-allowed disabled:opacity-40 mt-1"
+            style={{
+              background: `linear-gradient(to right, #00e5ff 0%, #00e5ff ${progress * 100}%, rgba(255,255,255,0.15) ${progress * 100}%, rgba(255,255,255,0.15) 100%)`,
+            }}
+          />
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button type="button" onClick={onToggleDetails} aria-pressed={detailsOpen} className={`flex h-9 items-center gap-1.5 rounded-lg border px-2 font-mono text-[9px] font-bold transition ${detailsOpen ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-200" : "border-white/15 bg-white/5 text-zinc-300 hover:border-cyan-300/40 hover:text-cyan-200"}`} aria-label={detailsOpen ? "Hide vessel data card" : "Show vessel data card"} title={detailsOpen ? "Hide vessel data" : "Show vessel data"}>
-            <PanelRightOpen size={13} /><span className="max-sm:hidden">VESSEL DATA</span>
-          </button>
-          <button type="button" onClick={togglePlay} disabled={route.length < 2} className="flex h-9 items-center gap-2 rounded-lg border border-cyan-300/50 bg-cyan-300 px-3 font-mono text-[10px] font-extrabold text-slate-950 shadow-[0_0_14px_rgba(0,229,255,.24)] transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-45" aria-label={playing ? "Pause vessel route playback" : "Play vessel route from start to endpoint"} title={playing ? "Pause route playback" : route.length < 2 ? "No historical route fixes available" : "Play route from start to endpoint"}>
-            {playing ? <Pause size={14} fill="currentColor" /> : progress >= 1 ? <RotateCcw size={14} /> : <Play size={14} fill="currentColor" />}
-            <span className="max-sm:hidden">{playing ? "PAUSE" : route.length < 2 ? "NO TRACK" : progress >= 1 ? "REPLAY" : "PLAY ROUTE"}</span>
-          </button>
-          <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-zinc-400 transition hover:border-rose-400/40 hover:bg-rose-400/10 hover:text-rose-300" aria-label="Close route telemetry" title="Close route telemetry">
-            <X size={15} />
-          </button>
+
+        {/* Close Button */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 text-zinc-400 hover:text-rose-400 hover:bg-rose-400/10 rounded-full transition cursor-pointer"
+          aria-label="Close route telemetry"
+          title="Close route telemetry"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      {/* ── Dark Telemetry Stats Badges Row (Below Playback Bar) ── */}
+      <div className="mt-2 flex items-center justify-center gap-2 flex-wrap font-mono text-[11px] text-zinc-200">
+        {/* Vessel Name & Category */}
+        <div className="flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-[#070e17]/90 px-3 py-1 shadow-sm backdrop-blur-md">
+          <Activity size={12} className="text-cyan-400" />
+          <span className="font-bold text-white tracking-wide truncate max-w-[130px]">
+            {shipName}
+          </span>
+          <span className="text-[9px] text-zinc-400">({vesselType})</span>
+        </div>
+
+        {/* Real-time Interpolated Coordinates */}
+        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 shadow-sm backdrop-blur-md">
+          <MapPin size={12} className="text-rose-400" />
+          <span className="text-zinc-300">
+            {currentLat.toFixed(4)}°, {currentLng.toFixed(4)}°
+          </span>
+        </div>
+
+        {/* Speed */}
+        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 shadow-sm backdrop-blur-md">
+          <Navigation size={12} className="text-emerald-400" />
+          <span className="font-bold text-emerald-300">{currentSpeed} kn</span>
+        </div>
+
+        {/* Heading */}
+        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 shadow-sm backdrop-blur-md">
+          <Compass size={12} className="text-amber-400" />
+          <span className="font-bold text-amber-300">{currentHeading}°</span>
+        </div>
+
+        {/* Fixes Count */}
+        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 shadow-sm backdrop-blur-md">
+          <Clock size={12} className="text-sky-400" />
+          <span className="text-zinc-400">
+            {route.length}{" "}
+            <span className="text-[9px] text-zinc-500 uppercase">fixes</span>
+          </span>
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
-        <div className="rounded-md border border-white/[0.07] bg-white/[0.025] px-2 py-1"><div className="font-mono text-[7px] tracking-wider text-zinc-500">TRACK DISTANCE</div><div className="mt-0.5 font-mono text-[9px] font-bold text-cyan-200">{routeStats.distanceKm.toFixed(1)} km</div></div>
-        <div className="rounded-md border border-white/[0.07] bg-white/[0.025] px-2 py-1"><div className="font-mono text-[7px] tracking-wider text-zinc-500">TIME UNDER TRACK</div><div className="mt-0.5 truncate font-mono text-[9px] font-bold text-sky-200">{formatDuration(routeStats.durationMs)}</div></div>
-        <div className="rounded-md border border-white/[0.07] bg-white/[0.025] px-2 py-1"><div className="font-mono text-[7px] tracking-wider text-zinc-500">CURRENT SPEED / COURSE</div><div className="mt-0.5 truncate font-mono text-[9px] font-bold text-emerald-200">{routeStats.currentSpeed == null ? "—" : `${routeStats.currentSpeed.toFixed(1)}${routeStats.currentSpeedEstimated ? "*" : ""}`} kn / {routeStats.currentCourse == null ? "—" : `${routeStats.currentCourse.toFixed(0)}°`}</div></div>
-        <div className="rounded-md border border-white/[0.07] bg-white/[0.025] px-2 py-1"><div className="font-mono text-[7px] tracking-wider text-zinc-500">AVG / PEAK SPEED</div><div className="mt-0.5 truncate font-mono text-[9px] font-bold text-emerald-200">{routeStats.averageSpeed == null ? "—" : `${routeStats.averageSpeed.toFixed(1)}${routeStats.averageIsEstimated ? "*" : ""}`} / {routeStats.maxSpeed == null ? "—" : `${routeStats.maxSpeed.toFixed(1)}${routeStats.peakIsEstimated ? "*" : ""}`} kn</div></div>
-        <div className="rounded-md border border-white/[0.07] bg-white/[0.025] px-2 py-1"><div className="font-mono text-[7px] tracking-wider text-zinc-500">CURRENT FIX</div><div className="mt-0.5 truncate font-mono text-[9px] font-bold text-zinc-200">{fallbackPoint.lat.toFixed(4)}°, {fallbackPoint.lng.toFixed(4)}°</div></div>
-        <div className="rounded-md border border-white/[0.07] bg-white/[0.025] px-2 py-1"><div className="font-mono text-[7px] tracking-wider text-zinc-500">LAST AIS FIX</div><div className="mt-0.5 truncate font-mono text-[9px] font-bold text-amber-200">{lastFixAge}</div></div>
-      </div>
-      <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 font-mono text-[8px]">
-        <div className="min-w-0"><div className="font-bold tracking-wider text-emerald-300">START · {formatDateTime(routeStats.startTime)}</div><div className="truncate text-zinc-300">{start.lat.toFixed(4)}°, {start.lng.toFixed(4)}°</div></div>
-        <div className="text-center text-zinc-500">{Math.round(progress * 100)}%</div>
-        <div className="min-w-0 text-right"><div className="font-bold tracking-wider text-amber-300">END · {String(ship.destination ?? "LAST AIS FIX").trim().toUpperCase()}</div><div className="truncate text-zinc-300">{formatDateTime(routeStats.endTime)} · {end.lat.toFixed(4)}°, {end.lng.toFixed(4)}°</div></div>
-      </div>
-      {(routeStats.averageIsEstimated || routeStats.peakIsEstimated || routeStats.currentSpeedEstimated) && <div className="mt-1 text-right font-mono text-[7px] text-zinc-600">*Speed estimated between timestamped AIS fixes; unmarked values are AIS reported.</div>}
-      <input aria-label="Seek through vessel route" type="range" min="0" max="1" step="0.001" value={progress} disabled={route.length < 2} onChange={(event) => seek(Number(event.target.value))} className="ship-route-range mt-1.5 h-2 w-full cursor-pointer accent-cyan-300 disabled:cursor-not-allowed disabled:opacity-35" style={{ background: `linear-gradient(to right, #34d399 0%, #22d3ee ${progress * 100}%, rgba(255,255,255,.12) ${progress * 100}%, rgba(255,255,255,.12) 100%)` }} />
     </section>
   );
 }

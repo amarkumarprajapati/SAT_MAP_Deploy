@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState, useCallback, memo } from "react";
 import * as maplibregl from "maplibre-gl";
@@ -1060,11 +1060,65 @@ function LTmap({
     unknown
   > | null>(null);
   const [routeTelemetryShip, setRouteTelemetryShip] = useState<Record<string, unknown> | null>(null);
-  const [showVesselFullDetails, setShowVesselFullDetails] = useState(false);
+  // Fetch complete vessel metadata and historical track when selected or when opening route telemetry
+  useEffect(() => {
+    const activeShip = routeTelemetryShip ?? selectedShip;
+    if (!activeShip) return;
+    const mmsi = activeShip.mmsi ?? activeShip.id;
+    if (!mmsi) return;
+    const controller = new AbortController();
+
+    // 1. Fetch complete vessel metadata from /api/maritime/ships/{mmsi}
+    fetch(api.maritimeShip(String(mmsi)), { signal: controller.signal, cache: 'no-store' })
+      .then(async (res) => (res.ok ? (res.json() as Promise<Record<string, unknown>>) : null))
+      .then((fullData) => {
+        if (!fullData) return;
+        setSelectedShip((prev) => {
+          if (!prev || String(prev.mmsi ?? prev.id ?? '') !== String(mmsi)) return prev;
+          return { ...prev, ...fullData };
+        });
+        setRouteTelemetryShip((prev) => {
+          if (!prev || String(prev.mmsi ?? prev.id ?? '') !== String(mmsi)) return prev;
+          return { ...prev, ...fullData };
+        });
+      })
+      .catch(() => {});
+
+    // 2. Fetch historical track fixes from /api/maritime/ships/{mmsi}/track
+    fetch(api.maritimeShipTrack(String(mmsi)), { signal: controller.signal, cache: 'no-store' })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return res.json() as Promise<{ track?: Array<{ lat: number; lng: number; speed?: number; heading?: number; timestamp?: number }> }>;
+      })
+      .then((data) => {
+        if (!data || !Array.isArray(data.track) || data.track.length === 0) return;
+        const fetchedTrack = data.track;
+        setSelectedShip((prev) => {
+          if (!prev || String(prev.mmsi ?? prev.id ?? '') !== String(mmsi)) return prev;
+          return {
+            ...prev,
+            track: fetchedTrack,
+            trackPointCount: Math.max(Number(prev.trackPointCount ?? 0), fetchedTrack.length),
+          };
+        });
+        setRouteTelemetryShip((prev) => {
+          if (!prev || String(prev.mmsi ?? prev.id ?? '') !== String(mmsi)) return prev;
+          return {
+            ...prev,
+            track: fetchedTrack,
+            trackPointCount: Math.max(Number(prev.trackPointCount ?? 0), fetchedTrack.length),
+          };
+        });
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [routeTelemetryShip?.mmsi, routeTelemetryShip?.id, selectedShip?.mmsi, selectedShip?.id]);
   const [selectedShipCardPosition, setSelectedShipCardPosition] = useState({
     x: 400,
     y: 500,
   });
+  const [fullDetailsShip, setFullDetailsShip] = useState<Record<string, unknown> | null>(null);
   const selectedShipRef = useRef<Record<string, unknown> | null>(null);
   useEffect(() => {
     selectedShipRef.current = selectedShip;
@@ -1072,7 +1126,7 @@ function LTmap({
 
   useEffect(() => {
     const onPlayback = (event: Event) => {
-      const detail = (event as CustomEvent<{ship: Record<string, unknown>; point: {lat?: number; lng?: number; heading?: number}; route: Array<{lat?: number; lng?: number}>; started?: boolean}>).detail;
+      const detail = (event as CustomEvent<{ship: Record<string, unknown>; point: {lat?: number; lng?: number; heading?: number}; route: Array<{lat?: number; lng?: number}>; started?: boolean; progress?: number; traveledRoute?: Array<{lat?: number; lng?: number}>}>).detail;
       const map = mapRef.current;
       if (!map || !detail?.point || !Number.isFinite(Number(detail.point.lat)) || !Number.isFinite(Number(detail.point.lng))) return;
       const coords = detail.route.map(p => [Number(p.lng), Number(p.lat)] as [number, number]).filter(p => p.every(Number.isFinite));
@@ -1086,9 +1140,15 @@ function LTmap({
       for (const id of ["selected-ship-vessel", "selected-ship-vessel-name", "selected-ship-halo"]) {
         if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
       }
-      if (detail.started && coords.length > 1) {
+
+      // Dynamically display the route as it progresses
+      const lineCoords = detail.traveledRoute && detail.traveledRoute.length > 1
+        ? detail.traveledRoute.map(p => [Number(p.lng), Number(p.lat)] as [number, number]).filter(p => p.every(Number.isFinite))
+        : coords;
+
+      if (lineCoords.length > 1) {
         routeSource?.setData({ type: "FeatureCollection", features: [
-          { type: "Feature", properties: { kind: "playback-route" }, geometry: { type: "LineString", coordinates: coords } },
+          { type: "Feature", properties: { kind: "playback-route" }, geometry: { type: "LineString", coordinates: lineCoords } },
           { type: "Feature", properties: { kind: "route-start" }, geometry: { type: "Point", coordinates: coords[0] } },
           { type: "Feature", properties: { kind: "route-end" }, geometry: { type: "Point", coordinates: coords[coords.length - 1] } },
         ] });
@@ -1127,7 +1187,7 @@ function LTmap({
     const sourceId = "selected-ship-route";
     map.addSource(sourceId, { type: "geojson", data: EMPTY_FC });
     map.addSource("selected-ship-marker", { type: "geojson", data: EMPTY_FC });
-    map.addLayer({ id: "selected-ship-playback-line", type: "line", source: sourceId, filter: ["==", ["get", "kind"], "playback-route"], paint: { "line-color": "#ffd600", "line-width": 2.5, "line-opacity": 0.9, "line-dasharray": [2, 1] } });
+    map.addLayer({ id: "selected-ship-playback-line", type: "line", source: sourceId, filter: ["==", ["get", "kind"], "playback-route"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#10b981", "line-width": 4, "line-opacity": 0.95 } });
     map.addLayer({ id: "selected-ship-route-endpoints", type: "circle", source: sourceId, filter: ["in", ["get", "kind"], ["literal", ["route-start", "route-end"]]], paint: { "circle-radius": 5, "circle-color": ["match", ["get", "kind"], "route-start", "#34d399", "#fbbf24"], "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 } });
 
     // 5. Selected vessel highlight stays in the map's cyan color palette.
@@ -1156,7 +1216,30 @@ function LTmap({
       },
     });
     map.addLayer({ id: "selected-ship-playback-halo", type: "circle", source: "selected-ship-marker", paint: { "circle-radius": 17, "circle-color": "#ffd600", "circle-opacity": 0.3, "circle-blur": 0.6 } });
-    map.addLayer({ id: "selected-ship-playback-marker", type: "symbol", source: "selected-ship-marker", layout: { "icon-image": ["coalesce", ["get", "iconKey"], "ship-selected-unknown-cargo"], "icon-size": ["*", 1.15, ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]], "icon-rotate": ["coalesce", ["get", "heading"], 0], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true }, paint: { "icon-opacity": 1 } });
+    map.addLayer({
+      id: "selected-ship-playback-marker",
+      type: "symbol",
+      source: "selected-ship-marker",
+      layout: {
+        "icon-image": ["coalesce", ["get", "iconKey"], "ship-selected-unknown-cargo"],
+        "icon-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          1,
+          0.75,
+          5,
+          1.05,
+          10,
+          1.4,
+        ],
+        "icon-rotate": ["coalesce", ["get", "heading"], 0],
+        "icon-rotation-alignment": "map",
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+      },
+      paint: { "icon-opacity": 1 },
+    });
 
     // 6. Selected vessel uses the same class and color as its normal map icon.
     map.addLayer({
@@ -1166,7 +1249,7 @@ function LTmap({
       filter: ["==", ["get", "kind"], "selected-vessel"],
       layout: {
         "icon-image": ["coalesce", ["get", "iconKey"], "ship-unknown-cargo"],
-        "icon-size": ["*", ["interpolate", ["linear"], ["zoom"], 1, 0.75, 5, 1.05, 10, 1.4], ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]],
+        "icon-size": ["interpolate", ["linear"], ["zoom"], 1, ["*", 0.75, ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]], 5, ["*", 1.05, ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]], 10, ["*", 1.4, ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]]],
         "icon-rotate": ["coalesce", ["get", "heading"], 0],
         "icon-rotation-alignment": "map",
         "icon-allow-overlap": true,
@@ -1236,7 +1319,14 @@ function LTmap({
       },
     });
 
-    if (coords.length > 1) {
+    // Only display route line if route telemetry playback is active for this ship
+    const isTelemetryActive = Boolean(
+      routeTelemetryShip &&
+      String(routeTelemetryShip.mmsi ?? routeTelemetryShip.id ?? "") ===
+        String(selectedShip.mmsi ?? selectedShip.id ?? "")
+    );
+
+    if (isTelemetryActive && coords.length > 1) {
       features.push({ type: "Feature", properties: { kind: "playback-route" }, geometry: { type: "LineString", coordinates: coords } });
       features.push({ type: "Feature", properties: { kind: "route-start" }, geometry: { type: "Point", coordinates: coords[0] } });
       features.push({ type: "Feature", properties: { kind: "route-end" }, geometry: { type: "Point", coordinates: coords[coords.length - 1] } });
@@ -1248,7 +1338,7 @@ function LTmap({
     for (const id of ["selected-ship-vessel", "selected-ship-vessel-name", "selected-ship-halo"]) {
       if (mapRef.current?.getLayer(id)) mapRef.current.setLayoutProperty(id, "visibility", "visible");
     }
-  }, [selectedShip]);
+  }, [selectedShip, routeTelemetryShip]);
   useEffect(() => {
     if (!liveTrackedShip) return;
     const liveId = String(liveTrackedShip.mmsi || liveTrackedShip.id || "");
@@ -1909,7 +1999,7 @@ function LTmap({
         id: "ship-density-heat",
         type: "heatmap",
         source: "maritime-density",
-        maxzoom: 4.5,
+          maxzoom: 1.5,
         paint: {
           "heatmap-weight": ["interpolate", ["linear"], ["get", "count"], 1, 0.25, 30, 1],
           "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 0.8, 4.5, 1.8],
@@ -1922,7 +2012,10 @@ function LTmap({
         id: "ship-dots",
         type: "circle",
         source: "maritime-ships",
-        minzoom: 4.5,
+        // Vessel icons are the only individual-vessel marker. Keep this
+        // circle layer hidden so ships are not rendered as colored dots.
+        layout: { visibility: "none" },
+        minzoom: 1.5,
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 2.5, 5, 3.5, 10, 5],
           "circle-color": ["match", ["get", "type"], "tanker", "#ff9d24", "military", "#ff3155", "#00e5ff"],
@@ -1936,10 +2029,10 @@ function LTmap({
         id: "ship-icons",
         type: "symbol",
         source: "maritime-ships",
-        minzoom: 4.5,
+        minzoom: 1.5,
         layout: {
           "icon-image": ["coalesce", ["get", "iconKey"], "ship-marker"],
-          "icon-size": ["*", ["interpolate", ["linear"], ["zoom"], 4.5, 0.7, 7, 0.9, 12, 1.2], ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 1.5, ["*", 0.6, ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]], 4.5, ["*", 0.75, ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]], 7, ["*", 0.95, ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]], 12, ["*", 1.2, ["coalesce", ["to-number", ["get", "iconScale"]], 0.9]]],
           "icon-rotate": ["coalesce", ["to-number", ["get", "heading"]], 0],
           "icon-rotation-alignment": "map",
           "icon-allow-overlap": true,
@@ -2524,7 +2617,8 @@ function LTmap({
       return;
     }
 
-    let detailMode = (mapRef.current?.getZoom() ?? 0) >= 4.5;
+    const DETAIL_ZOOM = 1.5;
+    let detailMode = (mapRef.current?.getZoom() ?? 0) >= DETAIL_ZOOM;
     const updateShipSource = () => {
       if (pendingShipsTimeoutRef.current) clearTimeout(pendingShipsTimeoutRef.current);
       lastShipsUpdateTimeRef.current = Date.now();
@@ -2542,7 +2636,7 @@ function LTmap({
       });
 
       const map = mapRef.current;
-      const showIndividualShips = (map?.getZoom() ?? 0) >= 4.5;
+      const showIndividualShips = (map?.getZoom() ?? 0) >= DETAIL_ZOOM;
       detailMode = showIndividualShips;
       const densityBins = new Map<string, { lng: number; lat: number; count: number }>();
       if (!showIndividualShips) {
@@ -2570,9 +2664,11 @@ function LTmap({
       }));
       setGeo("maritime-density", densityFeatures);
 
-      const features = showIndividualShips ? new Array(ships.length) : [];
+      // Keep world views responsive while still showing real vessel silhouettes.
+      const visibleShips = showIndividualShips ? ships.slice(0, 1400) : [];
+      const features = showIndividualShips ? new Array(visibleShips.length) : [];
       for (let i = 0; i < features.length; i++) {
-        const s = ships[i];
+        const s = visibleShips[i];
         features[i] = {
           type: "Feature",
           geometry: { type: "Point", coordinates: [Number(s.lng), Number(s.lat)] },
@@ -2628,7 +2724,7 @@ function LTmap({
 
     const map = mapRef.current;
     const onZoomEnd = () => {
-      const nextDetailMode = (map?.getZoom() ?? 0) >= 4.5;
+      const nextDetailMode = (map?.getZoom() ?? 0) >= DETAIL_ZOOM;
       if (nextDetailMode !== detailMode) updateShipSource();
     };
     map?.on("zoomend", onZoomEnd);
@@ -3749,8 +3845,6 @@ function LTmap({
       });
       onTrackShip?.(ship.mmsi);
       setSelectedShip(ship as unknown as Record<string, unknown>);
-      setRouteTelemetryShip(ship as unknown as Record<string, unknown>);
-      setShowVesselFullDetails(true);
     },
     [onTrackShip],
   );
@@ -3788,10 +3882,25 @@ function LTmap({
             setSelectedShip(null);
             onShipSelect?.(null);
           }}
+          onOpenRouteTelemetry={(shipToTrack) => {
+            setRouteTelemetryShip(shipToTrack);
+          }}
+          onOpenFullDetails={(shipForDetails) => {
+            setFullDetailsShip(shipForDetails);
+          }}
         />
       )}
-      {routeTelemetryShip && <ShipRoutePlaybackBar key={String(routeTelemetryShip.mmsi ?? routeTelemetryShip.id ?? "ship")} ship={routeTelemetryShip} onClose={() => setRouteTelemetryShip(null)} onToggleDetails={() => setShowVesselFullDetails((visible) => !visible)} detailsOpen={showVesselFullDetails} />}
-      {showVesselFullDetails && routeTelemetryShip && <VesselFullDetailsPanel ship={routeTelemetryShip} onClose={() => setShowVesselFullDetails(false)} />}
+      {fullDetailsShip && (
+        <VesselFullDetailsPanel
+          ship={fullDetailsShip}
+          onClose={() => setFullDetailsShip(null)}
+        />
+      )}
+      {routeTelemetryShip && (
+        <div className="vessel-card-dock">
+          <ShipRoutePlaybackBar key={String(routeTelemetryShip.mmsi ?? routeTelemetryShip.id ?? "ship")} ship={routeTelemetryShip} onClose={() => setRouteTelemetryShip(null)} />
+        </div>
+      )}
       {mapReady && (
         <MapPopups
           mapRef={mapRef}
@@ -3799,10 +3908,6 @@ function LTmap({
           onTrackShip={onTrackShip}
           onShipSelect={(ship) => {
             setSelectedShip(ship);
-            if (ship) {
-              setRouteTelemetryShip(ship);
-              setShowVesselFullDetails(true);
-            }
           }}
           liveTrackedShip={liveTrackedShip}
         />
