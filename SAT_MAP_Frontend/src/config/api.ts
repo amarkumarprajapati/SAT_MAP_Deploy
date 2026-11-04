@@ -122,10 +122,6 @@ export const api = {
   mapCartoAsset: (url: string) =>
     getApiUrl(`${API_PREFIX}/map/carto?url=${encodeURIComponent(url)}`),
   geospatialVideoMetadata: () => getApiUrl(API_ENDPOINTS.GEOSPATIAL_VIDEO_METADATA),
-  windData: (bounds: { west: number; south: number; east: number; north: number }) => {
-    const params = new URLSearchParams(Object.entries(bounds).map(([key, value]) => [key, String(value)]));
-    return getApiUrl(`/api/weather/wind-data?${params.toString()}`);
-  },
 };
 
 

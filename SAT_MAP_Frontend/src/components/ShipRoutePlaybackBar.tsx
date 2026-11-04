@@ -170,7 +170,7 @@ export default function ShipRoutePlaybackBar({ ship, onClose, onToggleDetails, d
 
   if (!ship) return null;
   return (
-    <section className={`pointer-events-auto fixed bottom-9 left-1/2 z-[240] box-border min-w-0 max-w-[calc(100vw-1rem)] w-[min(760px,calc(100vw-1.5rem))] max-h-[calc(100dvh-3rem)] overflow-x-hidden overflow-y-auto -translate-x-1/2 rounded-2xl border border-cyan-400/30 bg-[#07101df5] px-3 py-2.5 text-white shadow-[0_14px_48px_rgba(0,0,0,.58),0_0_22px_rgba(0,229,255,.10)] backdrop-blur-2xl sm:px-4${detailsOpen ? " lg:left-[calc((100vw-380px)/2)] lg:max-w-[calc(100vw-400px)] lg:w-[min(760px,calc(100vw-400px))]" : ""}`} aria-label="Vessel route telemetry and playback">
+    <section className={`pointer-events-auto fixed bottom-9 left-1/2 z-[240] box-border min-w-0 max-w-[calc(100vw-1rem)] w-[min(760px,calc(100vw-1.5rem))] max-h-[calc(100dvh-3rem)] overflow-x-hidden overflow-y-auto -translate-x-1/2 rounded-2xl border border-cyan-400/30 bg-[#07101df5] px-3 py-2.5 text-white backdrop-blur-2xl sm:px-4${detailsOpen ? " lg:left-[calc((100vw-380px)/2)] lg:max-w-[calc(100vw-400px)] lg:w-[min(760px,calc(100vw-400px))]" : ""}`} aria-label="Vessel route telemetry and playback">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Route size={14} className="shrink-0 text-cyan-300" />

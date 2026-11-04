@@ -22,6 +22,7 @@ import SatelliteCard, {
 import SatelliteIntelSidebar from "@/components/SatelliteIntelSidebar";
 import SatelliteVesselsSlider from "@/components/SatelliteVesselsSlider";
 import MapControls from "@/components/MapControls";
+import WindLayer from "@/components/WindLayer";
 import MapPopups, { createHomeMarkerPopup } from "@/components/MapPopups";
 import { attachTerrain } from "@/lib/map-terrain";
 import { applyMapProjection } from "@/lib/map-projection";
@@ -1918,37 +1919,6 @@ function LTmap({
         },
       });
       map.addLayer({
-        id: "ship-density-count",
-        type: "circle",
-        source: "maritime-density",
-        maxzoom: 4.5,
-        paint: {
-          "circle-radius": ["interpolate", ["linear"], ["get", "count"], 1, 3, 100, 12],
-          "circle-color": "#00d9f5",
-          "circle-opacity": 0.78,
-          "circle-stroke-color": "#d9fbff",
-          "circle-stroke-width": 1,
-        },
-      });
-      map.addLayer({
-        id: "ship-density-label",
-        type: "symbol",
-        source: "maritime-density",
-        maxzoom: 4.5,
-        layout: {
-          "text-field": ["to-string", ["get", "count"]],
-          "text-size": 10,
-          "text-font": ["Open Sans Bold"],
-          "text-allow-overlap": true,
-        },
-        paint: {
-          "text-color": "#f0fdff",
-          "text-halo-color": "#082f49",
-          "text-halo-width": 1.2,
-        },
-      });
-
-      map.addLayer({
         id: "ship-dots",
         type: "circle",
         source: "maritime-ships",
@@ -3397,6 +3367,7 @@ function LTmap({
           // Keep imagery above the dark basemap fills while leaving satellite
           // markers and other overlays visible above it.
           const firstOverlay = [
+            "wind-particles",
             "day-night-fill",
             "sat-footprint-fill",
             "sat-glow",
@@ -3837,13 +3808,7 @@ function LTmap({
         />
       )}
       {mapReady && showMapControls && <MapControls mapRef={mapRef} />}
-      {mapReady && activeLayers.wind && (
-        <div className="pointer-events-none absolute bottom-40 left-4 z-[210] rounded-xl border border-emerald-200/20 bg-slate-950/90 px-3 py-2 text-[10px] text-emerald-50 shadow-lg backdrop-blur-md">
-          <div className="mb-1.5 flex items-center gap-1.5 font-mono font-semibold uppercase tracking-wider"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />Wind Â· 10 m</div>
-          <div className="h-1.5 w-36 rounded-full bg-gradient-to-r from-sky-400 via-emerald-300 via-yellow-300 to-orange-400" />
-          <div className="mt-1 flex justify-between font-mono text-[9px] text-white/55"><span>0 m/s</span><span>20+ m/s</span></div>
-        </div>
-      )}
+      {mapReady && activeLayers.wind && mapRef.current && <WindLayer map={mapRef.current} />}
       {selectedSat && !isIntelOpen && !showVesselsSlider && (
         <SatelliteCard
           sat={selectedSat}
