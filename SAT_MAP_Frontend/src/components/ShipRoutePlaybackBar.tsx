@@ -199,7 +199,7 @@ export default function ShipRoutePlaybackBar({
         ) *
           180) /
           Math.PI +
-        360 % 360;
+        (360 % 360);
 
       const aTime = timestampMs(a.timestamp);
       const bTime = timestampMs(b.timestamp);
@@ -213,9 +213,10 @@ export default function ShipRoutePlaybackBar({
 
       const aSpeed = Number(a.speed || 0);
       const bSpeed = Number(b.speed || 0);
-      const speed = Number.isFinite(aSpeed) && Number.isFinite(bSpeed)
-        ? aSpeed + (bSpeed - aSpeed) * portion
-        : aSpeed || bSpeed || 0;
+      const speed =
+        Number.isFinite(aSpeed) && Number.isFinite(bSpeed)
+          ? aSpeed + (bSpeed - aSpeed) * portion
+          : aSpeed || bSpeed || 0;
 
       setCurrentLat(lat);
       setCurrentLng(lng);
@@ -246,7 +247,8 @@ export default function ShipRoutePlaybackBar({
     setPlaying(false);
     setProgress(0);
     progressRef.current = 0;
-    if (animationRef.current != null) cancelAnimationFrame(animationRef.current);
+    if (animationRef.current != null)
+      cancelAnimationFrame(animationRef.current);
     if (route[0]?.timestamp) {
       setCurrentUtcTime(formatUtcDateTime(route[0].timestamp));
     } else {
@@ -312,13 +314,13 @@ export default function ShipRoutePlaybackBar({
       aria-label="Dark Vessel Route Telemetry & Historical Playback"
     >
       {/* ── Main Dark Capsule Playback Bar ── */}
-      <div className="flex items-center gap-2.5 rounded-full border border-cyan-500/40 bg-[#09131ff2] px-3.5 py-2.5 text-zinc-200 shadow-[0_16px_50px_rgba(0,0,0,0.85)] backdrop-blur-2xl">
+      <div className="flex items-center gap-2.5 rounded-full border border-cyan-500/40 bg-[#09131ff2] px-3.5 py-2.5 text-zinc-200 backdrop-blur-2xl">
         {/* Circular Play / Pause Button with Cyan Glow */}
         <button
           type="button"
           onClick={togglePlay}
           disabled={route.length < 2}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-400 text-slate-950 font-bold shadow-[0_0_16px_rgba(0,229,255,0.4)] hover:bg-cyan-300 disabled:opacity-40 transition cursor-pointer"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-400 text-slate-950 font-bold hover:bg-cyan-300 disabled:opacity-40 transition cursor-pointer"
           aria-label={playing ? "Pause route playback" : "Play route"}
           title={
             playing
@@ -413,7 +415,7 @@ export default function ShipRoutePlaybackBar({
       {/* ── Dark Telemetry Stats Badges Row (Below Playback Bar) ── */}
       <div className="mt-2 flex items-center justify-center gap-2 flex-wrap font-mono text-[11px] text-zinc-200">
         {/* Vessel Name & Category */}
-        <div className="flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-[#070e17]/90 px-3 py-1 shadow-sm backdrop-blur-md">
+        <div className="flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-[#070e17]/90 px-3 py-1 backdrop-blur-md">
           <Activity size={12} className="text-cyan-400" />
           <span className="font-bold text-white tracking-wide truncate max-w-[130px]">
             {shipName}
@@ -422,7 +424,7 @@ export default function ShipRoutePlaybackBar({
         </div>
 
         {/* Real-time Interpolated Coordinates */}
-        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 shadow-sm backdrop-blur-md">
+        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 backdrop-blur-md">
           <MapPin size={12} className="text-rose-400" />
           <span className="text-zinc-300">
             {currentLat.toFixed(4)}°, {currentLng.toFixed(4)}°
@@ -430,19 +432,19 @@ export default function ShipRoutePlaybackBar({
         </div>
 
         {/* Speed */}
-        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 shadow-sm backdrop-blur-md">
+        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 backdrop-blur-md">
           <Navigation size={12} className="text-emerald-400" />
           <span className="font-bold text-emerald-300">{currentSpeed} kn</span>
         </div>
 
         {/* Heading */}
-        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 shadow-sm backdrop-blur-md">
+        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 backdrop-blur-md">
           <Compass size={12} className="text-amber-400" />
           <span className="font-bold text-amber-300">{currentHeading}°</span>
         </div>
 
         {/* Fixes Count */}
-        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 shadow-sm backdrop-blur-md">
+        <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-[#070e17]/90 px-3 py-1 backdrop-blur-md">
           <Clock size={12} className="text-sky-400" />
           <span className="text-zinc-400">
             {route.length}{" "}

@@ -55,6 +55,7 @@ export interface LTmapProps {
   selectedAnalysisArea?: { west: number; south: number; east: number; north: number; geometry?: GeoJSON.Polygon } | null;
   onAreaPlaybackUpdate?: (state: { time: number; running: boolean; passes: Array<{ name: string; category: string; firstPass: number; lastPass: number; passes: number; windows: Array<{ start: number; end: number }> }> }) => void;
   onAreaCapturedSatellites?: (satellites: SatelliteRow[]) => void;
+  onAreaCapturedShips?: (ships: Array<Record<string, unknown>>) => void;
   clearAreaTrigger?: number;
   onAreaSelected?: (area: { west: number; south: number; east: number; north: number; geometry?: GeoJSON.Polygon } | null) => void;
   geospatialVideoFrames?: GeoVideoFrame[] | null;

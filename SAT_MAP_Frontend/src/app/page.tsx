@@ -36,6 +36,7 @@ import {
   Film,
   ScanLine,
   Wind,
+  Ship,
 } from "lucide-react";
 import ScaleBar from "@/components/ScaleBar";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -532,6 +533,9 @@ export default function Dashboard() {
       lng: number;
       alt: number;
     }>
+  >([]);
+  const [areaCapturedShips, setAreaCapturedShips] = useState<
+    Array<Record<string, unknown>>
   >([]);
   const [clearAreaTrigger, setClearAreaTrigger] = useState(0);
   const revealed = true;
@@ -1248,6 +1252,7 @@ export default function Dashboard() {
                   })),
             )
           }
+          onAreaCapturedShips={(ships) => setAreaCapturedShips(ships)}
           clearAreaTrigger={clearAreaTrigger}
           onAreaSelected={(area) => {
             setAnalysisArea(area);
@@ -1393,6 +1398,68 @@ export default function Dashboard() {
                   </>
                 )}
               </div>
+              {/* Wind streamlines toggle inside area */}
+              <div className="mt-2.5 flex items-center justify-between rounded-lg border border-white/10 bg-[#09131f] p-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Wind size={15} className={activeLayers.wind ? "text-emerald-400" : "text-zinc-500"} />
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-zinc-100">Wind streamlines</div>
+                    <div className="truncate text-[9px] text-zinc-400">Animated 10 m wind flow in area</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveLayers((prev) => ({ ...prev, wind: !prev.wind }))}
+                  className={`rounded border px-2.5 py-1 font-mono text-[9px] font-bold transition cursor-pointer ${
+                    activeLayers.wind
+                      ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
+                      : "border-white/15 bg-white/5 text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  {activeLayers.wind ? "ACTIVE" : "SHOW"}
+                </button>
+              </div>
+
+              {/* Maritime vessels in area */}
+              <section className="mt-2 rounded-lg border border-cyan-300/15 bg-cyan-400/[0.04] p-2.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="flex items-center gap-1.5 text-[10px] font-bold tracking-wide text-cyan-100">
+                    <Ship size={12} className="text-cyan-400" />
+                    <span>VESSELS IN AREA</span>
+                  </h3>
+                  <span className="font-mono text-[9px] text-zinc-400">
+                    {areaCapturedShips.length} CURRENT
+                  </span>
+                </div>
+                <div className="hide-scrollbar mt-2 max-h-32 space-y-1 overflow-y-auto">
+                  {areaCapturedShips.length === 0 ? (
+                    <p className="text-[9px] text-zinc-500">
+                      No vessels currently inside the selected shape.
+                    </p>
+                  ) : (
+                    areaCapturedShips.map((s, idx) => (
+                      <div
+                        key={String(s.mmsi || s.id || idx)}
+                        onClick={() => {
+                          setSelectedShip(s);
+                        }}
+                        className="flex items-center justify-between rounded bg-black/20 px-2 py-1 hover:bg-white/10 transition cursor-pointer"
+                      >
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <Ship size={11} className="shrink-0 text-cyan-300" />
+                          <span className="truncate text-[9px] font-semibold text-zinc-200">
+                            {String(s.name || `MMSI ${s.mmsi || s.id}`)}
+                          </span>
+                        </span>
+                        <span className="ml-2 shrink-0 font-mono text-[8px] text-zinc-500">
+                          {String(s.type || "cargo").toUpperCase()} · {Number(s.speed || 0).toFixed(1)} KN
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+
               <section className="mt-2 rounded-lg border border-cyan-300/15 bg-cyan-400/[0.04] p-2.5">
                 <div className="flex items-center justify-between">
                   <h3 className="text-[10px] font-bold tracking-wide text-cyan-100">

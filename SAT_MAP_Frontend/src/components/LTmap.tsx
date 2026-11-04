@@ -295,6 +295,7 @@ function LTmap({
   selectedAnalysisArea,
   onAreaPlaybackUpdate,
   onAreaCapturedSatellites,
+  onAreaCapturedShips,
   clearAreaTrigger = 0,
   onAreaSelected,
   geospatialVideoFrames = null,
@@ -337,6 +338,10 @@ function LTmap({
   useEffect(() => {
     areaCapturedCallbackRef.current = onAreaCapturedSatellites;
   }, [onAreaCapturedSatellites]);
+  const areaCapturedShipsCallbackRef = useRef(onAreaCapturedShips);
+  useEffect(() => {
+    areaCapturedShipsCallbackRef.current = onAreaCapturedShips;
+  }, [onAreaCapturedShips]);
   const areaPlaybackRunningRef = useRef(false);
   const areaPlaybackCommandRef = useRef(0);
   const areaScanGenerationRef = useRef(0);
@@ -840,6 +845,7 @@ function LTmap({
     const map = mapRef.current;
     if (!map) return;
     const ring = selectedAnalysisArea.geometry?.coordinates[0];
+    const shipsList = (data.maritime_ships || []) as Array<Record<string, unknown>>;
     const timer = setInterval(() => {
       const captured = satRowsRef.current.filter((row) => {
         if (!ring?.length)
@@ -862,6 +868,37 @@ function LTmap({
         return inside;
       });
       areaCapturedCallbackRef.current?.(captured);
+
+      // Also filter maritime vessels inside the drawn analysis area
+      if (Array.isArray(shipsList) && shipsList.length > 0) {
+        const capturedShips = shipsList.filter((s) => {
+          const sLat = Number(s.lat);
+          const sLng = Number(s.lng);
+          if (!Number.isFinite(sLat) || !Number.isFinite(sLng)) return false;
+          if (!ring?.length) {
+            return (
+              sLng >= selectedAnalysisArea.west &&
+              sLng <= selectedAnalysisArea.east &&
+              sLat >= selectedAnalysisArea.south &&
+              sLat <= selectedAnalysisArea.north
+            );
+          }
+          let inside = false;
+          for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            const [xi, yi] = ring[i],
+              [xj, yj] = ring[j];
+            if (
+              yi > sLat !== yj > sLat &&
+              sLng < ((xj - xi) * (sLat - yi)) / (yj - yi) + xi
+            )
+              inside = !inside;
+          }
+          return inside;
+        });
+        areaCapturedShipsCallbackRef.current?.(capturedShips);
+      } else {
+        areaCapturedShipsCallbackRef.current?.([]);
+      }
       const passing = captured.length > 0;
       if (map.getLayer("analysis-area-fill"))
         map.setPaintProperty(
@@ -3959,44 +3996,6 @@ function LTmap({
           }}
         />
       )}
-      {selectedSat?.lat != null && selectedSat.lng != null && selectedSat.alt != null && (() => {
-        const coverage = generateFootprintFeatures({ lng: selectedSat.lng, lat: selectedSat.lat, alt: selectedSat.alt, elevationMaskDeg: 10 });
-        const totalAreaKm2 = 2 * Math.PI * 6371 ** 2 * (1 - Math.cos(coverage.angularRadiusRad));
-        let viewAreaKm2 = totalAreaKm2;
-        const bounds = coverageViewBounds;
-        if (bounds) {
-          const west = bounds.west, east = bounds.east;
-          const south = Math.max(-90, bounds.south), north = Math.min(90, bounds.north);
-          const cols = 72, rows = 48;
-          const dLon = (east - west) * Math.PI / 180 / cols;
-          const dLat = (north - south) * Math.PI / 180 / rows;
-          const satLat = selectedSat.lat * Math.PI / 180, satLng = selectedSat.lng * Math.PI / 180;
-          viewAreaKm2 = 0;
-          for (let row = 0; row < rows; row++) {
-            const lat = (south + (row + 0.5) * (north - south) / rows) * Math.PI / 180;
-            const cellArea = 6371 ** 2 * dLon * dLat * Math.cos(lat);
-            for (let col = 0; col < cols; col++) {
-              const lng = (west + (col + 0.5) * (east - west) / cols) * Math.PI / 180;
-              const cosDistance = Math.sin(satLat) * Math.sin(lat) + Math.cos(satLat) * Math.cos(lat) * Math.cos(lng - satLng);
-              if (Math.acos(Math.max(-1, Math.min(1, cosDistance))) <= coverage.angularRadiusRad) viewAreaKm2 += cellArea;
-            }
-          }
-        }
-        const areaKm2 = coverageAreaMode === "total" ? totalAreaKm2 : viewAreaKm2;
-        return (
-          <div className="pointer-events-auto fixed bottom-8 left-1/2 z-[220] box-border w-[min(360px,calc(100vw-1rem))] -translate-x-1/2 rounded-xl border border-cyan-400/30 bg-[#060a14]/95 px-3 py-2 font-mono text-[9px] text-cyan-100 shadow-xl backdrop-blur-xl sm:bottom-9">
-            <div className="flex min-w-0 items-center justify-between gap-2"><span className="truncate text-[9px] uppercase tracking-widest text-cyan-300">Ground coverage Â· {selectedSat.name}</span><span className="shrink-0 text-[8px] text-zinc-500">ESTIMATE</span></div>
-            <div className="mt-1.5 grid grid-cols-2 gap-2">
-              <div><span className="text-zinc-500">{coverageAreaMode === "total" ? "Total coverage area" : "Coverage in current view"}</span><div className="text-sm font-semibold text-white">{areaKm2 >= 1e6 ? `${(areaKm2 / 1e6).toFixed(2)}M kmÂ²` : `${Math.round(areaKm2).toLocaleString()} kmÂ²`}</div></div>
-              <div><span className="text-zinc-500">Footprint radius</span><div className="text-sm font-semibold text-white">{Math.round(coverage.radiusKm).toLocaleString()} km</div></div>
-            </div>
-            <div className="mt-1.5 border-t border-white/10 pt-1.5 text-[8px] leading-snug text-zinc-400">
-              <div><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-cyan-300/70 align-middle" />Estimated coverage Â· 10Â° elevation edge Â· {Math.round(selectedSat.alt).toLocaleString()} km altitude</div>
-            </div>
-            <div className="mt-1.5 flex justify-end"><button type="button" onClick={() => setCoverageAreaMode(mode => mode === "total" ? "view" : "total")} className="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[8px] font-semibold text-cyan-200 hover:bg-cyan-400/20">Show {coverageAreaMode === "total" ? "current viewing area" : "total coverage area"}</button></div>
-          </div>
-        );
-      })()}
       {selectedSat && showVesselsSlider && (
         <SatelliteVesselsSlider
           sat={selectedSat}

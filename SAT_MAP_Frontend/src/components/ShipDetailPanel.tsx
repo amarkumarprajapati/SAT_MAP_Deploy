@@ -1,14 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  X,
-  Radio,
-  Route,
-  Info,
-  Menu,
-  Flame,
-} from "lucide-react";
+import { X, Radio, Route, Info, Menu, Flame } from "lucide-react";
 import { calculateVoyageDetails, VoyageDetails } from "@/lib/maritime-route";
 import { api } from "@/config/api";
 
@@ -86,15 +79,17 @@ export default function ShipDetailPanel({
   const mmsi = String(ship.mmsi || ship.id || "");
   const rawShipName = String(ship.name || "").trim();
 
-  // Loading state for shimmer skeleton effect
-  const [loading, setLoading] = useState(true);
+  // Store details mapped by vessel key to derive loading purely without synchronous setState in effect
+  const vesselKey = `${mmsi}_${rawShipName}`;
+  const [loadedVesselKey, setLoadedVesselKey] = useState<string | null>(null);
   const [generalData, setGeneralData] = useState<ShipGeneralInfo | null>(null);
   const [wiki, setWiki] = useState<VesselWikiInfo | null>(null);
 
+  // Derive loading status: true if current vessel's data has not loaded yet
+  const loading = loadedVesselKey !== vesselKey;
+
   useEffect(() => {
     let isSubscribed = true;
-    setLoading(true);
-
     const controller = new AbortController();
     const fetchPromises = [];
 
@@ -122,16 +117,16 @@ export default function ShipDetailPanel({
 
     Promise.all(fetchPromises).then(([gen, wk]) => {
       if (!isSubscribed) return;
-      if (gen) setGeneralData(gen);
-      if (wk) setWiki(wk);
-      setLoading(false);
+      setGeneralData(gen);
+      setWiki(wk);
+      setLoadedVesselKey(vesselKey);
     });
 
     return () => {
       isSubscribed = false;
       controller.abort();
     };
-  }, [mmsi, rawShipName]);
+  }, [vesselKey, mmsi, rawShipName]);
 
   const shipName = String(
     generalData?.name || ship.name || "Unidentified Vessel",
@@ -179,14 +174,14 @@ export default function ShipDetailPanel({
 
   // Draught & Speed/Course
   const draughtVal =
-    ship.draught ?? ship.draft ?? generalData?.length ? "4.1" : null;
+    (ship.draught ?? ship.draft ?? generalData?.length) ? "4.1" : null;
   const speedKn =
     voyage.speedKnots != null ? Number(voyage.speedKnots).toFixed(1) : "0.0";
   const courseDeg = voyage.headingDeg ?? "0";
 
   return (
     <aside
-      className="fixed z-180 w-[min(330px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-cyan-500/30 bg-[#09131f] text-zinc-100 shadow-[0_20px_50px_rgba(0,0,0,0.85)] font-sans select-none backdrop-blur-xl"
+      className="fixed z-180 w-[min(330px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-cyan-500/30 bg-[#09131f] text-zinc-100  font-sans select-none backdrop-blur-xl"
       style={{
         left: position.x,
         top: position.y,
