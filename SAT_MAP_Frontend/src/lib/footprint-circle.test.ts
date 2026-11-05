@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { generateFootprintFeatures } from './footprint-circle';
+import { generateFootprintFeatures, footprintAngularRadius, SATELLITE_COVERAGE_ELEVATION_DEG } from './footprint-circle';
+
+describe('satellite coverage radius', () => {
+  it('excludes the outer horizon band from the displayed coverage', () => {
+    const alt = 1206.7;
+    const radius = footprintAngularRadius(alt, SATELLITE_COVERAGE_ELEVATION_DEG);
+    const horizon = footprintAngularRadius(alt);
+    const footprint = generateFootprintFeatures({ lat: -17.103, lng: 123.2845, alt, elevationMaskDeg: SATELLITE_COVERAGE_ELEVATION_DEG });
+    expect(radius).toBe(footprint.angularRadiusRad);
+    expect(radius).toBeLessThan(horizon);
+    // A ship in this band was previously highlighted outside the shaded area.
+    const outsideShipDistance = 6371 * (radius + horizon) / 2;
+    expect(outsideShipDistance).toBeGreaterThan(footprint.radiusKm);
+    expect(outsideShipDistance).toBeLessThan(6371 * horizon);
+  });
+});
 
 describe('generateFootprintFeatures', () => {
   it('generates a standard circular disc for equatorial satellite', () => {

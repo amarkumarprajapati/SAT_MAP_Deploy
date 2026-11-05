@@ -25,10 +25,8 @@ _snapshot_time: float = 0
 
 
 async def _compute_stats() -> dict[str, int]:
-    # 1. Satellites count
+    
     sat_count = tle_cache.catalogue_size()
-
-    # 2. Maritime count (live AIS ships)
     maritime_count = ais_stream.ship_count()
 
     return {"sats": sat_count, "maritime": maritime_count}

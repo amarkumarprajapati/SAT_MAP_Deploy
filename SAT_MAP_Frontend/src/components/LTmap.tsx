@@ -5,6 +5,7 @@ import * as maplibregl from "maplibre-gl";
 import { installTerrainTileProtocol } from "@/lib/terrain-tiles";
 import {
   createSatelliteLayer,
+  displayElevation,
   parseColor,
   type SatPoint,
 } from "@/lib/satellite-layer";
@@ -26,6 +27,7 @@ import WindLayer from "@/components/WindLayer";
 import MapPopups, { createHomeMarkerPopup } from "@/components/MapPopups";
 import { attachTerrain } from "@/lib/map-terrain";
 import { applyMapProjection } from "@/lib/map-projection";
+import { updateImageryPolarCaps } from "@/lib/polar-caps";
 import { SatelliteRow, LTmapProps } from "@/lib/map.types";
 import {
   orbitPath,
@@ -35,7 +37,7 @@ import {
   splitAtAntimeridian,
 } from "@/lib/orbit";
 import { getSolarTerminator } from "@/lib/solar-terminator";
-import { generateFootprintFeatures } from "@/lib/footprint-circle";
+import { generateFootprintFeatures, footprintAngularRadius, SATELLITE_COVERAGE_ELEVATION_DEG } from "@/lib/footprint-circle";
 import { getLocationTimeInfo, formatTimeInZone } from "@/lib/country-time";
 import { api, styleUrl, mapImageryTileUrl } from "@/config/api";
 import { X, Play, Pause, FastForward } from "lucide-react";
@@ -104,7 +106,7 @@ function SatellitePlaybackBar({
       className="pointer-events-auto fixed bottom-8 left-1/2 z-[230] box-border min-w-0 w-[min(680px,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-hidden rounded-2xl border border-cyan-500/35 bg-[#060a14]/95 text-white shadow-[0_16px_50px_rgba(0,0,0,0.85),0_0_30px_rgba(0,229,255,0.15)] backdrop-blur-2xl"
       aria-label="Satellite orbital playback controls"
     >
-      {/* â”€â”€ TOP BAR: BALANCED CONTROLS & SATELLITE TELEMETRY â”€â”€ */}
+      {/* TOP BAR: BALANCED CONTROLS & SATELLITE TELEMETRY */}
       <div className="flex min-w-0 items-center justify-between gap-2 border-b border-white/[0.08] px-3 py-1.5">
         {/* Left: Play/Pause button + Satellite name + Status badge */}
         <div className="flex min-w-0 items-center gap-2.5">
@@ -243,20 +245,20 @@ const DOUBLE_RIGHT_MS = 500;
 const DOUBLE_RIGHT_SLOP_PX = 12;
 
 function buildSatelliteHorizonCone(lng: number, lat: number, alt: number) {
-  const footprint = generateFootprintFeatures({ lng, lat, alt });
+  const footprint = generateFootprintFeatures({ lng, lat, alt: displayElevation(alt) / 1000, elevationMaskDeg: SATELLITE_COVERAGE_ELEVATION_DEG });
   const boundary = footprint.features.find(
     (feature) => feature.geometry.type === "LineString",
   );
   if (!boundary || boundary.geometry.type !== "LineString") return [];
   const ring = boundary.geometry.coordinates;
+  const apex = { lng, lat, altKm: alt };
   const groundRing = ring.map(([pointLng, pointLat]) => ({
     lng: pointLng,
     lat: pointLat,
     altKm: 0,
   }));
-  // Draw only the ground footprint boundary. Connecting the satellite point to
-  // every perimeter vertex created distracting radial spokes across the map.
-  return [[...groundRing, groundRing[0]]];
+  // Triangle fan segments: apex at satellite 3D altitude connecting down to ground coverage ring
+  return [[apex, ...groundRing, groundRing[0]]];
 }
 
 function LTmap({
@@ -318,6 +320,7 @@ function LTmap({
     onCountryClickRef.current = onCountryClick;
   }, [onCountryClick]);
   const [mapReady, setMapReady] = useState(false);
+  const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
   const areaStartRef = useRef<[number, number] | null>(null);
   const areaDrawModeRef = useRef(areaDrawMode);
   useEffect(() => {
@@ -1063,7 +1066,7 @@ function LTmap({
   );
   const prevShipSubLayersRef = useRef("");
   const lastSatShipsCalcRef = useRef<{
-    time: number;
+    alt: number;
     lat: number;
     lng: number;
     satId: string;
@@ -1072,8 +1075,12 @@ function LTmap({
   const [selectedSat, setSelectedSat] = useState<SatelliteDetail | null>(null);
   const [coverageAreaMode, setCoverageAreaMode] = useState<"total" | "view">("total");
   const [coverageViewBounds, setCoverageViewBounds] = useState<{ west: number; south: number; east: number; north: number } | null>(null);
-  const [showSatCircumference, setShowSatCircumference] = useState(false);
-  const showSatCircumferenceRef = useRef(false);
+  const [showSatCircumference, setShowSatCircumference] = useState(activeLayers.rf_coverage !== false);
+  const showSatCircumferenceRef = useRef(activeLayers.rf_coverage !== false);
+  useEffect(() => {
+    // Apply changes from the layer panel without vetoing the card's own toggle.
+    setShowSatCircumference(activeLayers.rf_coverage !== false);
+  }, [activeLayers.rf_coverage]);
   useEffect(() => {
     showSatCircumferenceRef.current = showSatCircumference;
   }, [showSatCircumference]);
@@ -1743,43 +1750,57 @@ function LTmap({
         type: "line",
         source: "geospatial-video-track",
         paint: {
-          "line-color": "#42f5d7",
-          "line-width": 2.5,
-          "line-opacity": 0.9,
+          "line-color": "#22d3ee",
+          "line-width": 3.5,
+          "line-opacity": 0.95,
         },
       });
+      // ArcGIS Pro FMV style camera field-of-view frustum / cone fill
       map.addLayer({
         id: "geospatial-video-footprint-fill",
         type: "fill",
         source: "geospatial-video-frame",
         filter: ["==", ["geometry-type"], "Polygon"],
         paint: {
-          "fill-color": "#f5a623",
-          "fill-opacity": 0.22,
-          "fill-outline-color": "#ffd166",
+          "fill-color": ["coalesce", ["get", "fillColor"], "#ef4444"],
+          "fill-opacity": ["coalesce", ["get", "fillOpacity"], 0.35],
         },
       });
+      // ArcGIS Pro FMV style camera cone outline
       map.addLayer({
         id: "geospatial-video-footprint-outline",
         type: "line",
         source: "geospatial-video-frame",
         filter: ["==", ["geometry-type"], "Polygon"],
         paint: {
-          "line-color": "#ffd166",
-          "line-width": 2,
-          "line-opacity": 1,
+          "line-color": ["coalesce", ["get", "strokeColor"], "#f87171"],
+          "line-width": 2.5,
+          "line-opacity": 0.95,
         },
       });
+      // Outer pulse ring for sensor location
+      map.addLayer({
+        id: "geospatial-video-sensor-pulse",
+        type: "circle",
+        source: "geospatial-video-frame",
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: {
+          "circle-radius": 16,
+          "circle-color": "#22d3ee",
+          "circle-opacity": 0.28,
+        },
+      });
+      // Primary sensor marker
       map.addLayer({
         id: "geospatial-video-sensor",
         type: "circle",
         source: "geospatial-video-frame",
         filter: ["==", ["geometry-type"], "Point"],
         paint: {
-          "circle-radius": 6,
-          "circle-color": "#42f5d7",
-          "circle-stroke-color": "#071018",
-          "circle-stroke-width": 2,
+          "circle-radius": 8,
+          "circle-color": "#06b6d4",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 2.5,
         },
       });
 
@@ -2136,6 +2157,7 @@ function LTmap({
         },
       });
       setMapReady(true);
+      setMapInstance(map);
       requestAnimationFrame(() => onReadyRef.current?.());
       if (process.env.NODE_ENV === "development")
         (window as unknown as { __ltmap?: maplibregl.Map }).__ltmap = map;
@@ -2327,6 +2349,13 @@ function LTmap({
         track: "ready",
       };
       setSelectedSat(satDetail);
+      // Every newly selected satellite starts with its coverage cone visible.
+      showSatCircumferenceRef.current = true;
+      setShowSatCircumference(true);
+      layer.setCone(
+        buildSatelliteHorizonCone(p.lng, p.lat, p.alt),
+        parseColor(satDetail.color),
+      );
       satHeadingRef.current = livePosition
         ? (propagateTelemetry(p.line1 || "", p.line2 || "", selectedAt)
             ?.headingDeg ?? 0)
@@ -2339,29 +2368,18 @@ function LTmap({
           layer.setOrbit(null);
           return;
         }
-        // Keep the live marker at the centre of the full revolution, as in
-        // and stale catalogue positions can make them look like separate paths.
         const anchor = new Date(satPlaybackTimeRef.current ?? Date.now());
-        const current = propagateTLE(p.line1, p.line2, anchor);
-        if (current) {
-          p.lat = current.lat;
-          p.lng = current.lng;
-          p.alt = current.altKm;
-        }
         const orbit = orbitPath(p.line1, p.line2, 240, anchor);
         layer.setOrbit(
           splitAtAntimeridian(orbit).map((run) =>
-            run.map((point) => ({
-              lng: point.lng,
-              lat: point.lat,
-              altKm: point.altKm,
-            })),
+            run.map((point) => ({ lng: point.lng, lat: point.lat, altKm: point.altKm })),
           ),
           0xffd54f,
         );
       };
       updateOrbit();
       satOrbitIntervalRef.current = setInterval(updateOrbit, 500);
+
     });
 
     let lastHoverPick = -Infinity;
@@ -2430,6 +2448,7 @@ function LTmap({
       sizeToContainer.disconnect();
       map.remove();
       mapRef.current = null;
+      setMapInstance(null);
     };
   }, [setIntelOpen]);
 
@@ -2476,23 +2495,74 @@ function LTmap({
       | undefined;
     if (!source) return;
     const features: GeoJSON.Feature[] = [];
-    if (geospatialVideoFrame?.footprint?.length) {
-      features.push({
-        type: "Feature",
-        properties: { kind: "frame-footprint" },
-        geometry: {
-          type: "Polygon",
-          coordinates: geospatialVideoFrame.footprint as GeoJSON.Position[][],
-        },
-      });
-    }
     if (geospatialVideoFrame) {
+      const { sensor, headingDeg, footprint } = geospatialVideoFrame;
+      const centerLng = sensor.lng;
+      const centerLat = sensor.lat;
+
+      // 1. If explicit 4-corner footprint is available from metadata
+      if (footprint?.length) {
+        features.push({
+          type: "Feature",
+          properties: {
+            kind: "frame-footprint",
+            fillColor: "#ef4444",
+            fillOpacity: 0.35,
+            strokeColor: "#f87171",
+          },
+          geometry: {
+            type: "Polygon",
+            coordinates: footprint as GeoJSON.Position[][],
+          },
+        });
+      } else {
+        // 2. ArcGIS Pro FMV style camera cone / frustum wedge
+        // Project a field-of-view fan (default 60 deg FOV, 120m range)
+        const heading = headingDeg ?? 0;
+        const fovDeg = 60;
+        const radiusMeters = 120;
+        const earthRadius = 6378137;
+        const latRad = (centerLat * Math.PI) / 180;
+
+        const halfFov = fovDeg / 2;
+        const startAngle = heading - halfFov;
+        const endAngle = heading + halfFov;
+        const numSteps = 24;
+        const coneCoords: [number, number][] = [[centerLng, centerLat]];
+
+        for (let i = 0; i <= numSteps; i++) {
+          const stepAngle = startAngle + (i / numSteps) * (endAngle - startAngle);
+          const rad = (stepAngle * Math.PI) / 180;
+          const dNorth = radiusMeters * Math.cos(rad);
+          const dEast = radiusMeters * Math.sin(rad);
+          const ptLat = centerLat + (dNorth / earthRadius) * (180 / Math.PI);
+          const ptLng = centerLng + (dEast / (earthRadius * Math.cos(latRad))) * (180 / Math.PI);
+          coneCoords.push([ptLng, ptLat]);
+        }
+        coneCoords.push([centerLng, centerLat]);
+
+        features.push({
+          type: "Feature",
+          properties: {
+            kind: "arcgis-camera-cone",
+            fillColor: "#ef4444",
+            fillOpacity: 0.38,
+            strokeColor: "#fca5a5",
+          },
+          geometry: {
+            type: "Polygon",
+            coordinates: [coneCoords],
+          },
+        });
+      }
+
+      // Sensor location marker
       features.push({
         type: "Feature",
         properties: { kind: "sensor-position" },
         geometry: {
           type: "Point",
-          coordinates: [geospatialVideoFrame.sensor.lng, geospatialVideoFrame.sensor.lat],
+          coordinates: [centerLng, centerLat],
         },
       });
     }
@@ -2506,11 +2576,12 @@ function LTmap({
     const line = map.getLayer("sat-footprint-line");
     const laser = map.getLayer("sat-footprint-laser");
     if (!fill || !line || !laser) return;
-    const showCoverage = activeLayers.rf_coverage !== false && !selectedSat;
-    map.setLayoutProperty("sat-footprint-fill", "visibility", laserView || !showCoverage ? "none" : "visible");
-    map.setLayoutProperty("sat-footprint-line", "visibility", laserView || !showCoverage ? "none" : "visible");
-    map.setLayoutProperty("sat-footprint-laser", "visibility", laserView || !showCoverage ? "none" : "visible");
-  }, [mapReady, laserView, activeLayers.rf_coverage, selectedSat]);
+    // Show coverage through the moving cone only, without a separate horizon disc or ring.
+    map.setLayoutProperty("sat-footprint-fill", "visibility", "none");
+    map.setLayoutProperty("sat-footprint-line", "visibility", "none");
+    // The footprint needs only one boundary; do not overlay a second glowing outline.
+    map.setLayoutProperty("sat-footprint-laser", "visibility", "none");
+  }, [mapReady, laserView, activeLayers.rf_coverage, showSatCircumference]);
 
   useEffect(() => {
     if (
@@ -2524,24 +2595,29 @@ function LTmap({
       satLayerRef.current?.setCone(null);
       return;
     }
-    // During playback the selected satellite's footprint is updated directly
-    // with its marker in the animation loop below.
-    if (satPlaybackPlaying) return;
-    setGeo("sat-footprint", []);
-  }, [selectedSat, mapReady, setGeo, satPlaybackPlaying]);
-
-  useEffect(() => {
-    if (!mapReady) return;
-    if (satPlaybackPlaying) return;
-    if (!selectedSat || selectedSat.lat == null || selectedSat.lng == null || selectedSat.alt == null) {
+    if (!showSatCircumference || laserView) {
       satLayerRef.current?.setCone(null);
       return;
     }
+    if (satPlaybackPlaying) return;
+
+    // Match the illustrative cone to the altitude used by the map renderer.
+    const color = satColorFor(selectedSat.category, selectedSat.color, paletteRef.current);
+    const footprint = generateFootprintFeatures({
+      lng: selectedSat.lng,
+      lat: selectedSat.lat,
+      alt: displayElevation(selectedSat.alt) / 1000,
+      color,
+      elevationMaskDeg: SATELLITE_COVERAGE_ELEVATION_DEG,
+    });
+    setGeo("sat-footprint", footprint.features);
+
+    // Render 3D radar cone from satellite altitude down to ground horizon
     satLayerRef.current?.setCone(
       buildSatelliteHorizonCone(selectedSat.lng, selectedSat.lat, selectedSat.alt),
-      parseColor(selectedSat.color),
+      parseColor(selectedSat.color || color),
     );
-  }, [showSatCircumference, selectedSat, mapReady, satPlaybackPlaying]);
+  }, [selectedSat, mapReady, setGeo, satPlaybackPlaying, showSatCircumference, laserView]);
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -2815,20 +2891,19 @@ function LTmap({
       return () => clearTimeout(timer);
     }
 
-    const now = Date.now();
     const prevCalc = lastSatShipsCalcRef.current;
     if (
       prevCalc &&
       prevCalc.satId === selectedSatId &&
       prevCalc.ships === shipSource &&
-      now - prevCalc.time < 1500 &&
-      Math.abs(selectedSatLat - prevCalc.lat) < 0.04 &&
-      Math.abs(selectedSatLng - prevCalc.lng) < 0.04
+      selectedSatAlt === prevCalc.alt &&
+      selectedSatLat === prevCalc.lat &&
+      selectedSatLng === prevCalc.lng
     ) {
       return;
     }
     lastSatShipsCalcRef.current = {
-      time: now,
+      alt: selectedSatAlt,
       lat: selectedSatLat,
       lng: selectedSatLng,
       satId: selectedSatId,
@@ -2837,7 +2912,7 @@ function LTmap({
 
     const earthKm = 6371;
     const viewingRadiusKm =
-      earthKm * Math.acos(earthKm / (earthKm + Math.max(0, selectedSatAlt)));
+      earthKm * footprintAngularRadius(displayElevation(selectedSatAlt) / 1000, SATELLITE_COVERAGE_ELEVATION_DEG);
     const toRad = Math.PI / 180;
     const satLatRad = selectedSatLat * toRad;
     const cosSatLat = Math.cos(satLatRad);
@@ -3248,16 +3323,18 @@ function LTmap({
           const footprint = generateFootprintFeatures({
             lng: pos.lng,
             lat: pos.lat,
-            alt: pos.altKm,
+            alt: displayElevation(pos.altKm) / 1000,
             color,
-            elevationMaskDeg: 10,
+            elevationMaskDeg: SATELLITE_COVERAGE_ELEVATION_DEG,
           });
           setGeo("sat-footprint", footprint.features);
-          if (showSatCircumferenceRef.current) {
+          if (showSatCircumferenceRef.current && !laserView) {
             satLayerRef.current?.setCone(
               buildSatelliteHorizonCone(pos.lng, pos.lat, pos.altKm),
               parseColor(color),
             );
+          } else {
+            satLayerRef.current?.setCone(null);
           }
         }
         const nowWallClock = performance.now();
@@ -3268,26 +3345,19 @@ function LTmap({
         const telemetry = updateTelemetry && row.line1 && row.line2
           ? propagateTelemetry(row.line1, row.line2, time)
           : null;
-        if (satPlaybackTimeRef.current != null) {
-          const now = performance.now();
-          if (
-            now - lastPlaybackOrbitUpdateRef.current >= 1000 &&
-            row.line1 &&
-            row.line2
-          ) {
-            lastPlaybackOrbitUpdateRef.current = now;
-            const orbit = orbitPath(row.line1, row.line2, 240, time);
-            satLayerRef.current?.setOrbit(
-              splitAtAntimeridian(orbit).map((run) =>
-                run.map((point) => ({
-                  lng: point.lng,
-                  lat: point.lat,
-                  altKm: point.altKm,
-                })),
-              ),
-              0xffd54f,
-            );
-          }
+        if (
+          satPlaybackTimeRef.current != null &&
+          nowWallClock - lastPlaybackOrbitUpdateRef.current >= 1000 &&
+          row.line1 && row.line2
+        ) {
+          lastPlaybackOrbitUpdateRef.current = nowWallClock;
+          const orbit = orbitPath(row.line1, row.line2, 240, time);
+          satLayerRef.current?.setOrbit(
+            splitAtAntimeridian(orbit).map((run) =>
+              run.map((point) => ({ lng: point.lng, lat: point.lat, altKm: point.altKm })),
+            ),
+            0xffd54f,
+          );
         }
         if (updateTelemetry) {
           lastSelectedPositionUiUpdateRef.current = nowWallClock;
@@ -3333,7 +3403,7 @@ function LTmap({
     };
     update();
     return () => clearTimeout(timer);
-  }, [mapReady, projection, toSatPoints, satPlaybackPlaying, satPlaybackTime, setGeo]);
+  }, [mapReady, projection, toSatPoints, satPlaybackPlaying, satPlaybackTime, setGeo, laserView]);
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -3522,7 +3592,9 @@ function LTmap({
         } else {
           map.setLayoutProperty("satellite-layer", "visibility", "visible");
         }
+        updateImageryPolarCaps(map, true);
       } else {
+        updateImageryPolarCaps(map, false);
         if (map.getLayer("satellite-layer")) {
           map.setLayoutProperty("satellite-layer", "visibility", "none");
         }
@@ -3964,7 +4036,7 @@ function LTmap({
         />
       )}
       {mapReady && showMapControls && <MapControls mapRef={mapRef} />}
-      {mapReady && activeLayers.wind && mapRef.current && <WindLayer map={mapRef.current} />}
+      {mapReady && activeLayers.wind && mapInstance && <WindLayer map={mapInstance} />}
       {selectedSat && !isIntelOpen && !showVesselsSlider && (
         <SatelliteCard
           sat={selectedSat}

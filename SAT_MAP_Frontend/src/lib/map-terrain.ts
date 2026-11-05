@@ -3,8 +3,6 @@ import { batchTerrainLayers } from './terrain-layer-order';
 
 export const TERRAIN_SOURCE = 'ltmap-terrain-dem';
 export type TerrainStatus = 'idle' | 'waiting' | 'loading' | 'ready' | 'error';
-
-// Hysteresis prevents reloading tiles when hovering around the activation zoom.
 export const TERRAIN_MIN_ZOOM = 10;
 const DISABLE_ZOOM = 9.5;
 export const TERRAIN_SETTLE_MS = 500;

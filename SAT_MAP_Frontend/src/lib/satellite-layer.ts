@@ -623,7 +623,8 @@ export function createSatelliteLayer(id: string): CustomLayerInterface & {
 
       try {
         program = programs.get(shader, 'marker');
-        orbitProgram = orbitSegments?.length ? programs.get(shader, 'orbit') : null;
+        orbitProgram = (orbitSegments?.length || coneSegments?.length || orbitDirty || coneDirty)
+          ? programs.get(shader, 'orbit') : null;
         activeShader = shader;
       } catch (err) {
         console.error('[L&T] satellite layer:', err instanceof Error ? err.message : err);
@@ -723,6 +724,10 @@ export function createSatelliteLayer(id: string): CustomLayerInterface & {
         }
 
         if (coneBuffers.length) {
+          // A translucent cone must be visible from either side. MapLibre may
+          // leave face culling enabled, and polar rings can reverse winding.
+          const coneCullWasEnabled = gl.isEnabled(gl.CULL_FACE);
+          gl.disable(gl.CULL_FACE);
           gl.uniform3f(gl.getUniformLocation(orbitProgram, 'u_color'),
             ((coneColor >> 16) & 0xff) / 255, ((coneColor >> 8) & 0xff) / 255, (coneColor & 0xff) / 255);
           gl.uniform1f(gl.getUniformLocation(orbitProgram, 'u_alpha'), 0.18);
@@ -733,6 +738,7 @@ export function createSatelliteLayer(id: string): CustomLayerInterface & {
             gl.vertexAttribDivisor(loc, 0);
             gl.drawArrays(gl.TRIANGLES, 0, c.count);
           }
+          if (coneCullWasEnabled) gl.enable(gl.CULL_FACE);
         }
 
         gl.depthMask(true);

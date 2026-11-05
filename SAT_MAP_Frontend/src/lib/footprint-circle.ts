@@ -14,6 +14,14 @@
  */
 
 const EARTH_RADIUS_KM = 6371;
+export const SATELLITE_COVERAGE_ELEVATION_DEG = 5;
+
+export function footprintAngularRadius(alt: number, elevationMaskDeg = 0): number {
+  const altitudeKm = Math.max(1, alt);
+  const elevationMaskRad = (Math.max(0, Math.min(30, elevationMaskDeg)) * Math.PI) / 180;
+  const ratio = EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altitudeKm);
+  return Math.max(0, Math.acos(Math.min(1, Math.max(-1, ratio * Math.cos(elevationMaskRad)))) - elevationMaskRad);
+}
 
 export interface FootprintInput {
   lng: number;
@@ -97,10 +105,7 @@ export function generateFootprintFeatures(
   points = 180,
 ): FootprintOutput {
   const { lng, lat, alt, color, elevationMaskDeg = 0 } = input;
-  const altitudeKm = Math.max(1, alt);
-  const elevationMaskRad = (Math.max(0, Math.min(30, elevationMaskDeg)) * Math.PI) / 180;
-  const ratio = EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altitudeKm);
-  const angularRadiusRad = Math.max(0, Math.acos(Math.min(1, Math.max(-1, ratio * Math.cos(elevationMaskRad)))) - elevationMaskRad);
+  const angularRadiusRad = footprintAngularRadius(alt, elevationMaskDeg);
   const radiusKm = EARTH_RADIUS_KM * angularRadiusRad;
 
   const latRad = (lat * Math.PI) / 180;

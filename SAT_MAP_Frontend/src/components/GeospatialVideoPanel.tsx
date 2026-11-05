@@ -1,17 +1,37 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Clapperboard, FileText, MapPin, Upload, X } from 'lucide-react';
-import { api } from '@/config/api';
-import type { GeoVideoFrame } from '@/lib/geospatial-video';
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertCircle,
+  Clapperboard,
+  Crosshair,
+  Eye,
+  FileText,
+  MapPin,
+  Navigation,
+  Upload,
+  X,
+} from "lucide-react";
+import { api } from "@/config/api";
+import type { GeoVideoFrame } from "@/lib/geospatial-video";
 
 interface Props {
   onClose: () => void;
   onFramesChange: (frames: GeoVideoFrame[] | null) => void;
   onFrameChange: (frame: GeoVideoFrame | null) => void;
+  onFlyToLocation?: (coords: {
+    lat: number;
+    lng: number;
+    zoom?: number;
+  }) => void;
 }
 
-export default function GeospatialVideoPanel({ onClose, onFramesChange, onFrameChange }: Props) {
+export default function GeospatialVideoPanel({
+  onClose,
+  onFramesChange,
+  onFrameChange,
+  onFlyToLocation,
+}: Props) {
   const videoInputRef = useRef<HTMLInputElement>(null);
   const metadataInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -20,13 +40,17 @@ export default function GeospatialVideoPanel({ onClose, onFramesChange, onFrameC
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [frames, setFrames] = useState<GeoVideoFrame[]>([]);
   const [currentFrame, setCurrentFrame] = useState<GeoVideoFrame | null>(null);
-  const [metadataName, setMetadataName] = useState('');
-  const [error, setError] = useState('');
+  const [autoFollow, setAutoFollow] = useState(true);
+  const [metadataName, setMetadataName] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => () => {
-    if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current);
+    },
+    [],
+  );
 
   const selectVideo = (file?: File) => {
     if (!file) return;
@@ -55,64 +79,321 @@ export default function GeospatialVideoPanel({ onClose, onFramesChange, onFrameC
       if (frames[mid].timeSeconds <= time) low = mid;
       else high = mid - 1;
     }
-    setCurrentFrame(frames[low]);
+    const matched = frames[low];
+    setCurrentFrame(matched);
+    if (autoFollow && matched && onFlyToLocation) {
+      onFlyToLocation({
+        lat: matched.sensor.lat,
+        lng: matched.sensor.lng,
+      });
+    }
   };
 
-  const frameTime = useMemo(() => currentFrame ? `${currentFrame.timeSeconds.toFixed(2)}s` : '—', [currentFrame]);
+  const handleCenterOnMap = () => {
+    if (!currentFrame && frames.length === 0) return;
+    const target = currentFrame || frames[0];
+    if (target && onFlyToLocation) {
+      onFlyToLocation({
+        lat: target.sensor.lat,
+        lng: target.sensor.lng,
+        zoom: 17,
+      });
+    }
+  };
+
+  const frameTime = useMemo(
+    () => (currentFrame ? `${currentFrame.timeSeconds.toFixed(2)}s` : "—"),
+    [currentFrame],
+  );
 
   const loadMetadata = async (file: File) => {
-    setError('');
+    setError("");
     setLoading(true);
     setMetadataName(file.name);
     try {
       const body = new FormData();
-      body.append('file', file);
-      const response = await fetch(api.geospatialVideoMetadata(), { method: 'POST', body });
+      body.append("file", file);
+      const response = await fetch(api.geospatialVideoMetadata(), {
+        method: "POST",
+        body,
+      });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.detail || `Metadata import failed (${response.status})`);
-      const parsed = Array.isArray(result.frames) ? result.frames as GeoVideoFrame[] : [];
-      if (!parsed.length) throw new Error('The metadata file contains no usable position frames.');
+      if (!response.ok)
+        throw new Error(
+          result.detail || `Metadata import failed (${response.status})`,
+        );
+      const parsed = Array.isArray(result.frames)
+        ? (result.frames as GeoVideoFrame[])
+        : [];
+      if (!parsed.length)
+        throw new Error(
+          "The metadata file contains no usable position frames.",
+        );
       setFrames(parsed);
       setCurrentFrame(parsed[0]);
+      if (parsed[0] && onFlyToLocation) {
+        onFlyToLocation({
+          lat: parsed[0].sensor.lat,
+          lng: parsed[0].sensor.lng,
+          zoom: 17,
+        });
+      }
     } catch (cause) {
       setFrames([]);
       setCurrentFrame(null);
-      setError(cause instanceof Error ? cause.message : 'Could not read this metadata file.');
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not read this metadata file.",
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <section className="pointer-events-auto fixed bottom-4 right-4 z-[240] flex max-h-[min(72vh,650px)] w-[min(560px,calc(100vw-24px))] flex-col overflow-hidden rounded-2xl border border-cyan-300/25 bg-[#09111bf2] text-zinc-100 shadow-[0_18px_60px_rgba(0,0,0,.72),0_0_30px_rgba(0,229,255,.08)] backdrop-blur-2xl" aria-label="Geospatial video player">
+    <section
+      className="pointer-events-auto fixed bottom-4 right-4 z-[240] flex max-h-[min(72vh,650px)] w-[min(560px,calc(100vw-24px))] flex-col overflow-hidden rounded-2xl border border-cyan-300/25 bg-[#09111bf2] text-zinc-100 backdrop-blur-2xl"
+      aria-label="Geospatial video player"
+    >
       <header className="flex items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-300"><Clapperboard size={16}/></span>
-          <div className="min-w-0"><h2 className="font-mono text-[10px] font-bold tracking-[0.15em] text-white">GEOSPATIAL VIDEO</h2><p className="mt-0.5 truncate font-mono text-[9px] text-zinc-500">Video playback · synchronized map position</p></div>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-300">
+            <Clapperboard size={16} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="font-mono text-[10px] font-bold tracking-[0.15em] text-white">
+              GEOSPATIAL VIDEO
+            </h2>
+            <p className="mt-0.5 truncate font-mono text-[9px] text-zinc-500">
+              Video playback · synchronized map position
+            </p>
+          </div>
         </div>
-        <button onClick={onClose} aria-label="Close geospatial video" className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-white/[0.08] hover:text-white"><X size={16}/></button>
+        <button
+          onClick={onClose}
+          aria-label="Close geospatial video"
+          className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-white/[0.08] hover:text-white"
+        >
+          <X size={16} />
+        </button>
       </header>
 
       <div className="flex min-h-0 flex-col gap-3 overflow-y-auto p-3">
         <div className="overflow-hidden rounded-xl border border-white/[0.09] bg-black">
-          {videoUrl ? <video ref={videoRef} src={videoUrl} controls playsInline onTimeUpdate={updateFrame} onSeeked={updateFrame} onLoadedMetadata={updateFrame} className="block max-h-[min(40vh,360px)] w-full bg-black object-contain" /> : <button type="button" onClick={() => videoInputRef.current?.click()} className="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-[radial-gradient(ellipse_at_center,rgba(14,116,144,.13),transparent_65%)] text-zinc-400 transition hover:text-cyan-200"><Clapperboard size={25} className="text-cyan-300/70"/><span className="font-mono text-[10px] font-bold tracking-[0.12em]">SELECT GEOSPATIAL VIDEO</span><span className="text-[9px] text-zinc-600">MP4, MOV, WebM or browser-supported format</span></button>}
+          {videoUrl ? (
+            <video
+              ref={videoRef}
+              src={videoUrl}
+              controls
+              playsInline
+              onTimeUpdate={updateFrame}
+              onSeeked={updateFrame}
+              onLoadedMetadata={updateFrame}
+              className="block max-h-[min(40vh,360px)] w-full bg-black object-contain"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => videoInputRef.current?.click()}
+              className="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-[radial-gradient(ellipse_at_center,rgba(14,116,144,.13),transparent_65%)] text-zinc-400 transition hover:text-cyan-200"
+            >
+              <Clapperboard size={25} className="text-cyan-300/70" />
+              <span className="font-mono text-[10px] font-bold tracking-[0.12em]">
+                SELECT GEOSPATIAL VIDEO
+              </span>
+              <span className="text-[9px] text-zinc-600">
+                MP4, MOV, WebM or browser-supported format
+              </span>
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => videoInputRef.current?.click()} className="flex min-w-0 items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.035] px-3 py-2 text-left transition hover:border-cyan-300/25 hover:bg-cyan-300/[0.05]"><Upload size={14} className="shrink-0 text-cyan-300"/><span className="min-w-0"><span className="block font-mono text-[9px] font-semibold tracking-wide text-zinc-200">VIDEO FILE</span><span className="block truncate text-[9px] text-zinc-500">{videoFile?.name ?? 'Choose a video'}</span></span></button>
-          <button type="button" disabled={loading} onClick={() => metadataInputRef.current?.click()} className="flex min-w-0 items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.035] px-3 py-2 text-left transition hover:border-cyan-300/25 hover:bg-cyan-300/[0.05] disabled:opacity-50"><FileText size={14} className="shrink-0 text-cyan-300"/><span className="min-w-0"><span className="block font-mono text-[9px] font-semibold tracking-wide text-zinc-200">POSITION METADATA CSV</span><span className="block truncate text-[9px] text-zinc-500">{loading ? 'Reading track…' : metadataName || 'Choose synchronized metadata'}</span></span></button>
-          <input ref={videoInputRef} type="file" accept="video/*,.ts,.mpg,.mpeg,.mp4,.mov,.webm" className="hidden" onChange={event => selectVideo(event.target.files?.[0])}/>
-          <input ref={metadataInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={event => { const file = event.target.files?.[0]; if (file) void loadMetadata(file); }}/>
+          <button
+            type="button"
+            onClick={() => videoInputRef.current?.click()}
+            className="flex min-w-0 items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.035] px-3 py-2 text-left transition hover:border-cyan-300/25 hover:bg-cyan-300/[0.05]"
+          >
+            <Upload size={14} className="shrink-0 text-cyan-300" />
+            <span className="min-w-0">
+              <span className="block font-mono text-[9px] font-semibold tracking-wide text-zinc-200">
+                VIDEO FILE
+              </span>
+              <span className="block truncate text-[9px] text-zinc-500">
+                {videoFile?.name ?? "Choose a video"}
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => metadataInputRef.current?.click()}
+            className="flex min-w-0 items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.035] px-3 py-2 text-left transition hover:border-cyan-300/25 hover:bg-cyan-300/[0.05] disabled:opacity-50"
+          >
+            <FileText size={14} className="shrink-0 text-cyan-300" />
+            <span className="min-w-0">
+              <span className="block font-mono text-[9px] font-semibold tracking-wide text-zinc-200">
+                POSITION METADATA CSV
+              </span>
+              <span className="block truncate text-[9px] text-zinc-500">
+                {loading
+                  ? "Reading track…"
+                  : metadataName || "Choose synchronized metadata"}
+              </span>
+            </span>
+          </button>
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*,.ts,.mpg,.mpeg,.mp4,.mov,.webm"
+            className="hidden"
+            onChange={(event) => selectVideo(event.target.files?.[0])}
+          />
+          <input
+            ref={metadataInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void loadMetadata(file);
+            }}
+          />
         </div>
 
-        {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[10px] text-rose-200"><AlertCircle size={14} className="mt-0.5 shrink-0"/>{error}</div>}
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[10px] text-rose-200"
+          >
+            <AlertCircle size={14} className="mt-0.5 shrink-0" />
+            {error}
+          </div>
+        )}
 
         <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-2.5 py-2"><div className="font-mono text-[8px] tracking-[0.1em] text-zinc-500">TRACK FRAMES</div><div className="mt-1 font-mono text-xs font-semibold tabular-nums text-white">{frames.length.toLocaleString()}</div></div>
-          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-2.5 py-2"><div className="font-mono text-[8px] tracking-[0.1em] text-zinc-500">VIDEO TIME</div><div className="mt-1 font-mono text-xs font-semibold tabular-nums text-cyan-200">{frameTime}</div></div>
-          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-2.5 py-2"><div className="font-mono text-[8px] tracking-[0.1em] text-zinc-500">SENSOR</div><div className="mt-1 flex items-center gap-1 font-mono text-[10px] font-semibold tabular-nums text-emerald-200">{currentFrame ? <><MapPin size={11}/>{currentFrame.sensor.lat.toFixed(4)}, {currentFrame.sensor.lng.toFixed(4)}</> : '—'}</div></div>
+          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-2.5 py-2">
+            <div className="font-mono text-[8px] tracking-[0.1em] text-zinc-500">
+              TRACK FRAMES
+            </div>
+            <div className="mt-1 font-mono text-xs font-semibold tabular-nums text-white">
+              {frames.length.toLocaleString()}
+            </div>
+          </div>
+          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-2.5 py-2">
+            <div className="font-mono text-[8px] tracking-[0.1em] text-zinc-500">
+              VIDEO TIME
+            </div>
+            <div className="mt-1 font-mono text-xs font-semibold tabular-nums text-cyan-200">
+              {frameTime}
+            </div>
+          </div>
+          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-2.5 py-2">
+            <div className="font-mono text-[8px] tracking-[0.1em] text-zinc-500">
+              SENSOR
+            </div>
+            <div className="mt-1 flex items-center gap-1 font-mono text-[10px] font-semibold tabular-nums text-emerald-200">
+              {currentFrame ? (
+                <>
+                  <MapPin size={11} />
+                  {currentFrame.sensor.lat.toFixed(4)},{" "}
+                  {currentFrame.sensor.lng.toFixed(4)}
+                </>
+              ) : (
+                "—"
+              )}
+            </div>
+          </div>
         </div>
-        <p className="text-[9px] leading-relaxed text-zinc-500">Load a CSV with timestamps and sensor latitude/longitude to synchronize the trail. For an exact frame footprint, include the four frame-corner coordinates for each timestamp; FOV-derived footprints are approximate. The supplied GIFs are visual references, not georeferenced source footage.</p>
+
+        {/* ArcGIS / Map Controls Toolbar */}
+        <div className="flex items-center justify-between rounded-lg border border-cyan-500/20 bg-cyan-950/20 px-3 py-2 text-[10px]">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCenterOnMap}
+              disabled={frames.length === 0}
+              className="flex items-center gap-1.5 rounded bg-cyan-500/20 px-2.5 py-1 font-mono text-[10px] font-medium text-cyan-300 transition hover:bg-cyan-500/30 disabled:opacity-40"
+              title="Fly globe camera directly to current sensor position"
+            >
+              <Crosshair size={12} className="animate-spin-slow" />
+              LOCATE ON MAP
+            </button>
+            <button
+              type="button"
+              onClick={() => setAutoFollow(!autoFollow)}
+              className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[10px] transition ${
+                autoFollow
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                  : "bg-white/5 text-zinc-400 hover:text-zinc-200"
+              }`}
+              title="Smoothly keep globe camera centered as video plays"
+            >
+              <Navigation
+                size={11}
+                className={autoFollow ? "text-emerald-300" : ""}
+              />
+              {autoFollow ? "CAMERA FOLLOW: ON" : "CAMERA FOLLOW: OFF"}
+            </button>
+          </div>
+          {currentFrame?.headingDeg != null && (
+            <div className="flex items-center gap-1 font-mono text-[9px] text-zinc-400">
+              <span>HDG:</span>
+              <span className="font-semibold text-cyan-300">
+                {Math.round(currentFrame.headingDeg)}°
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* ArcGIS / Map Controls Toolbar */}
+        <div className="flex items-center justify-between rounded-lg border border-cyan-500/20 bg-cyan-950/20 px-3 py-2 text-[10px]">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCenterOnMap}
+              disabled={frames.length === 0}
+              className="flex items-center gap-1.5 rounded bg-cyan-500/20 px-2.5 py-1 font-mono text-[10px] font-medium text-cyan-300 transition hover:bg-cyan-500/30 disabled:opacity-40"
+              title="Fly globe camera directly to current sensor position"
+            >
+              <Crosshair size={12} className="animate-spin-slow" />
+              LOCATE ON MAP
+            </button>
+            <button
+              type="button"
+              onClick={() => setAutoFollow(!autoFollow)}
+              className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[10px] transition ${
+                autoFollow
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                  : "bg-white/5 text-zinc-400 hover:text-zinc-200"
+              }`}
+              title="Smoothly keep globe camera centered as video plays"
+            >
+              <Navigation
+                size={11}
+                className={autoFollow ? "text-emerald-300" : ""}
+              />
+              {autoFollow ? "CAMERA FOLLOW: ON" : "CAMERA FOLLOW: OFF"}
+            </button>
+          </div>
+          {currentFrame?.headingDeg != null && (
+            <div className="flex items-center gap-1 font-mono text-[9px] text-zinc-400">
+              <span>HDG:</span>
+              <span className="font-semibold text-cyan-300">
+                {Math.round(currentFrame.headingDeg)}°
+              </span>
+            </div>
+          )}
+        </div>
+
+        <p className="text-[9px] leading-relaxed text-zinc-500">
+          Load a CSV with timestamps and sensor latitude/longitude to
+          synchronize the trail. For an exact frame footprint, include the four
+          frame-corner coordinates for each timestamp; FOV-derived footprints
+          are approximate. The supplied GIFs are visual references, not
+          georeferenced source footage.
+        </p>
       </div>
     </section>
   );

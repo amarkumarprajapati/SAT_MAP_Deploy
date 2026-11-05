@@ -2109,6 +2109,15 @@ export default function Dashboard() {
           }}
           onFramesChange={handleGeoVideoFrames}
           onFrameChange={handleGeoVideoFrame}
+          onFlyToLocation={(coords) =>
+            setFlyToLocation({
+              lat: coords.lat,
+              lng: coords.lng,
+              zoom: coords.zoom ?? 17,
+              duration: 800,
+              ts: Date.now(),
+            })
+          }
         />
       )}
 
