@@ -82,10 +82,10 @@ async def vessel_details(mmsi: int):
         else "Container Ship" if str(details.get("type", "")).lower() == "cargo"
         else f"{str(details.get('type', 'Vessel')).title()}"
     )
-    dest = details.get("destination") or "IN TRANSIT"
-    origin = details.get("origin") or "PORT OF DEPARTURE"
-    details["departurePort"] = str(origin).strip()
-    details["destinationPort"] = str(dest).strip()
+    dest = details.get("destination")
+    origin = details.get("origin")
+    details["departurePort"] = str(origin).strip() if origin and str(origin).strip() and str(origin).strip().upper() != "PORT OF DEPARTURE" else None
+    details["destinationPort"] = str(dest).strip() if dest and str(dest).strip() else None
     first_seen = details.get("firstSeenAt") or details.get("trackStartAt")
     last_seen = details.get("lastSeenAt") or details.get("timestamp") or time.time()
     details["atd"] = first_seen

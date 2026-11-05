@@ -1,48 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { X, Radio, Route, Info, Menu, Flame } from "lucide-react";
+import { X, Radio, Route, Info, Flame } from "lucide-react";
 import { calculateVoyageDetails, VoyageDetails } from "@/lib/maritime-route";
 import { api } from "@/config/api";
-
-interface VesselWikiInfo {
-  found: boolean;
-  available?: boolean;
-  title?: string;
-  description?: string;
-  extract?: string;
-  thumbnailUrl?: string | null;
-  wikiUrl?: string;
-}
-
-interface ShipGeneralInfo {
-  shipId?: number | string;
-  name?: string;
-  aisName?: string;
-  imo?: number | string | null;
-  mmsi?: number | string;
-  length?: number;
-  width?: number;
-  callsign?: string;
-  country?: string;
-  countryCode?: string;
-  type?: string;
-  subtype?: string;
-  departurePort?: string;
-  destinationPort?: string;
-  atd?: number | string;
-  eta?: number | string;
-  photoUrl?: string;
-  photoAuthor?: string;
-}
-
-interface ShipDetailPanelProps {
-  ship: Record<string, unknown>;
-  onClose: () => void;
-  position: { x: number; y: number };
-  onOpenRouteTelemetry?: (ship: Record<string, unknown>) => void;
-  onOpenFullDetails?: (ship: Record<string, unknown>) => void;
-}
+import type {
+  VesselWikiInfo,
+  ShipGeneralInfo,
+  ShipDetailPanelProps,
+} from "@/helper";
 
 function formatAisDateTime(val: unknown): string {
   if (!val) return "—";
@@ -139,12 +105,13 @@ export default function ShipDetailPanel({
         ? "Naval Vessel"
         : "Container Ship");
 
-  // Country Flag Emoji and Code
+  // Country Flag Emoji, Code and Full Country Name
   const countryCode = (
     generalData?.countryCode ||
     voyage.countryCode ||
-    "IN"
+    (typeof ship.flag === "string" && ship.flag.length === 2 ? ship.flag : "IN")
   ).toUpperCase();
+  const countryName = generalData?.country || voyage.countryName || null;
   const countryFlag = voyage.flagEmoji || "🌐";
 
   // Vessel Photo (only real photo if returned, no hardcoded placeholder images)
@@ -154,27 +121,48 @@ export default function ShipDetailPanel({
     (wiki?.found ? "Wikimedia Commons" : "MarineTraffic contributor");
 
   // ATD & ETA display
-  const atdDisplay = formatAisDateTime(
-    generalData?.atd || ship.firstSeenAt || ship.trackStartAt || ship.timestamp,
-  );
+  const atdRaw = generalData?.atd || ship.firstSeenAt || ship.trackStartAt;
+  const atdDisplay = atdRaw ? formatAisDateTime(atdRaw) : "—";
   const etaRaw = generalData?.eta || ship.eta;
-  const etaDisplay = etaRaw ? formatAisDateTime(etaRaw) : "-";
+  const etaDisplay = etaRaw ? formatAisDateTime(etaRaw) : "—";
 
-  // Port departure / destination short codes or names
-  const originPortCode = (
+  // Clean port names and check if real data exists
+  const rawDeparture =
     generalData?.departurePort ||
-    voyage.startName ||
-    `PORT OF`
-  ).toUpperCase();
-  const destPortCode = (
+    (typeof ship.origin === "string" ? ship.origin : "");
+  const rawDestination =
     generalData?.destinationPort ||
-    voyage.endName ||
-    String(ship.destination || `INMAA`)
-  ).toUpperCase();
+    (typeof ship.destination === "string" ? ship.destination : "");
+
+  const originPort = useMemo(() => {
+    if (!rawDeparture) return null;
+    const trimmed = rawDeparture.trim();
+    if (
+      !trimmed ||
+      /^port\s*of(\s*departure)?$/i.test(trimmed) ||
+      /^unknown$/i.test(trimmed) ||
+      trimmed === "-"
+    ) {
+      return null;
+    }
+    return trimmed;
+  }, [rawDeparture]);
+
+  const destPort = useMemo(() => {
+    if (!rawDestination) return null;
+    const trimmed = rawDestination.trim();
+    if (!trimmed || /^unknown$/i.test(trimmed) || trimmed === "-") {
+      return null;
+    }
+    return trimmed;
+  }, [rawDestination]);
 
   // Draught & Speed/Course
+  const rawDraught = ship.draught ?? ship.draft;
   const draughtVal =
-    (ship.draught ?? ship.draft ?? generalData?.length) ? "4.1" : null;
+    rawDraught != null && Number(rawDraught) > 0
+      ? `${Number(rawDraught).toFixed(1)}m`
+      : null;
   const speedKn =
     voyage.speedKnots != null ? Number(voyage.speedKnots).toFixed(1) : "0.0";
   const courseDeg = voyage.headingDeg ?? "0";
@@ -194,25 +182,38 @@ export default function ShipDetailPanel({
     >
       {/* ── Top Header Bar (Dark Tactical Theme) ── */}
       <div className="flex items-center justify-between border-b border-white/10 bg-[#070e17] px-2.5 py-2 text-zinc-100">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-rose-500/90 text-white shadow-sm">
-            <Flame size={12} className="fill-current" />
-          </div>
-          <span className="text-sm shrink-0 leading-none">{countryFlag}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className="text-base select-none shrink-0 leading-none"
+            title={countryName ? `${countryName} (${countryCode})` : countryCode}
+          >
+            {countryFlag}
+          </span>
           <div className="min-w-0 leading-tight">
-            <h2
-              className="truncate text-[13px] font-bold tracking-tight text-white drop-shadow"
-              title={shipName}
-            >
-              {shipName}
-            </h2>
-            <div className="text-[10px] text-zinc-400 font-medium truncate">
-              {subType}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[9.5px] font-mono px-1 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/30 text-cyan-300 font-bold shrink-0">
+                {countryCode}
+              </span>
+              <h2
+                className="truncate text-[13px] font-bold tracking-tight text-white drop-shadow"
+                title={shipName}
+              >
+                {shipName}
+              </h2>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 font-medium truncate mt-0.5">
+              <span>{subType}</span>
+              {countryName && countryName !== "International Registry" && (
+                <>
+                  <span className="text-zinc-600">•</span>
+                  <span className="text-zinc-300 truncate">{countryName}</span>
+                </>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0 text-zinc-400">
+        <div className="flex items-center gap-1 shrink-0 text-zinc-400 ml-1">
           <button
             type="button"
             onClick={onClose}
@@ -284,7 +285,7 @@ export default function ShipDetailPanel({
             <button
               type="button"
               onClick={() => onOpenFullDetails?.(ship)}
-              className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-500 py-1.5 px-3 text-center text-xs font-bold text-white transition shadow-sm cursor-pointer active:scale-[0.98]"
+              className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-500 py-1.5 px-3 text-center text-xs font-bold text-white transition cursor-pointer active:scale-[0.98]"
               title="Open full technical dossier on the right side"
             >
               <span>Vessel details</span>
@@ -294,39 +295,73 @@ export default function ShipDetailPanel({
           {/* ── Route Telemetry Progress Bar Section (Dark Theme) ── */}
           <div className="p-3 bg-[#09131f] space-y-2 border-b border-white/10">
             {/* Origin & Destination Ports */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-baseline gap-1">
-                <span className="text-[11px] font-bold text-zinc-400 uppercase">
-                  {countryCode}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col min-w-0 max-w-[48%]">
+                <span className="text-[9px] uppercase tracking-wider font-semibold text-zinc-400">
+                  Departure
                 </span>
-                <span className="text-sm font-extrabold tracking-tight text-white truncate max-w-[110px]">
-                  {originPortCode.split(" ").slice(0, 2).join(" ")}
-                </span>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  {originPort ? (
+                    <span
+                      className="text-xs font-bold text-white truncate"
+                      title={originPort}
+                    >
+                      {originPort}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-medium text-zinc-400">
+                      At Sea
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-[11px] font-bold text-zinc-400 uppercase">
-                  {countryCode}
+              <div className="flex flex-col items-end text-right min-w-0 max-w-[48%]">
+                <span className="text-[9px] uppercase tracking-wider font-semibold text-zinc-400">
+                  Destination
                 </span>
-                <span className="text-sm font-extrabold tracking-tight text-white truncate max-w-[110px]">
-                  {destPortCode.split(" ").slice(0, 2).join(" ")}
-                </span>
+                <div className="flex items-baseline justify-end gap-1 mt-0.5">
+                  {destPort ? (
+                    <span
+                      className="text-xs font-bold text-white truncate"
+                      title={destPort}
+                    >
+                      {destPort}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-medium text-zinc-400">
+                      Undisclosed
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* ATD & Reported ETA timestamps */}
-            <div className="flex items-center justify-between text-[10.5px]">
-              <div>
-                <span className="font-bold text-zinc-200">ATD: </span>
-                <span className="text-zinc-400 font-mono text-[10px]">
+            {/* ATD & Reported ETA timestamps - 2-Column Grid eliminating text overlap */}
+            <div className="grid grid-cols-2 gap-2 text-[10px] pt-1">
+              <div className="flex flex-col min-w-0">
+                <span className="text-[9px] uppercase tracking-wider font-semibold text-zinc-400">
+                  ATD
+                </span>
+                <span
+                  className="text-zinc-300 font-mono text-[10px] truncate mt-0.5"
+                  title={atdDisplay}
+                >
                   {atdDisplay}
                 </span>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="font-bold text-zinc-200">Reported ETA: </span>
-                <span className="text-zinc-400 font-mono text-[10px]">
+              <div className="flex flex-col items-end text-right min-w-0">
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] uppercase tracking-wider font-semibold text-zinc-400">
+                    Reported ETA
+                  </span>
+                  <Info size={10} className="text-zinc-500 shrink-0" />
+                </div>
+                <span
+                  className="text-zinc-300 font-mono text-[10px] truncate mt-0.5"
+                  title={etaDisplay}
+                >
                   {etaDisplay}
                 </span>
-                <Info size={11} className="text-zinc-500 shrink-0" />
               </div>
             </div>
 
@@ -354,7 +389,7 @@ export default function ShipDetailPanel({
               <button
                 type="button"
                 onClick={() => onOpenRouteTelemetry?.(ship)}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-cyan-500/40 bg-cyan-950/60 hover:bg-cyan-900/80 px-2.5 py-1.5 text-xs font-bold text-cyan-200 transition shadow-[0_0_12px_rgba(0,229,255,0.15)] cursor-pointer"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-cyan-500/40 bg-cyan-950/60 hover:bg-cyan-900/80 px-2.5 py-1.5 text-xs font-bold text-cyan-200 transition cursor-pointer"
                 title="Open historical ship track and playback animation"
               >
                 <Route size={13} className="text-cyan-400 shrink-0" />
@@ -399,7 +434,7 @@ export default function ShipDetailPanel({
                 Draught:
               </div>
               <div className="mt-0.5 text-[11px] font-bold text-amber-300 font-mono">
-                {draughtVal ? `${draughtVal}m` : "—"}
+                {draughtVal || "—"}
               </div>
             </div>
           </div>
@@ -411,7 +446,7 @@ export default function ShipDetailPanel({
               <span className="font-bold text-zinc-200">
                 {voyage.updatedAgoStr}
               </span>{" "}
-              (AIS source: Roaming)
+              {/* (AIS source: Roaming) */}
             </div>
             <div className="flex items-center gap-1 font-mono text-[9px] text-emerald-400">
               <Radio size={10} className="animate-pulse" />

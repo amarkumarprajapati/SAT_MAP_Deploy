@@ -1321,7 +1321,8 @@ function LTmap({
       | maplibregl.GeoJSONSource
       | undefined;
     if (!source) return;
-    if (!selectedShip) {
+    const activeShip = routeTelemetryShip ?? selectedShip;
+    if (!activeShip) {
       source.setData(EMPTY_FC);
       const marker = map?.getSource("selected-ship-marker") as maplibregl.GeoJSONSource | undefined;
       marker?.setData(EMPTY_FC);
@@ -1331,23 +1332,30 @@ function LTmap({
       return;
     }
 
-    const voyage = calculateVoyageDetails(selectedShip);
-    const route = (Array.isArray(selectedShip.track) ? selectedShip.track : []) as Array<{lat?: number; lng?: number}>;
-    const coords = route.map(point => [Number(point.lng), Number(point.lat)] as [number, number]).filter(point => point.every(Number.isFinite));
+    const voyage = calculateVoyageDetails(activeShip);
+    const rawTrack = (Array.isArray(activeShip.track) ? activeShip.track : []) as Array<{lat?: number; lng?: number}>;
+    let coords = rawTrack
+      .map(point => [Number(point.lng), Number(point.lat)] as [number, number])
+      .filter(point => point.every(Number.isFinite));
+
+    if (coords.length < 2 && voyage.trackCoordinates.length > 1) {
+      coords = voyage.trackCoordinates;
+    }
+
     const features: GeoJSON.Feature[] = [];
 
-    // Selected vessel icon: selection is communicated by color only.
+    // Selected vessel icon
     features.push({
       type: "Feature",
       properties: {
         kind: "selected-vessel",
         type: voyage.vesselCategory,
         heading: voyage.headingDeg,
-        iconKey: vesselIconKey(selectedShip),
-        iconScale: vesselIconScale(selectedShip),
+        iconKey: vesselIconKey(activeShip),
+        iconScale: vesselIconScale(activeShip),
         name: String(
-          selectedShip.name ||
-            (selectedShip.mmsi ? `MMSI ${selectedShip.mmsi}` : "Vessel"),
+          activeShip.name ||
+            (activeShip.mmsi ? `MMSI ${activeShip.mmsi}` : "Vessel"),
         ),
       },
       geometry: {
@@ -1356,12 +1364,8 @@ function LTmap({
       },
     });
 
-    // Only display route line if route telemetry playback is active for this ship
-    const isTelemetryActive = Boolean(
-      routeTelemetryShip &&
-      String(routeTelemetryShip.mmsi ?? routeTelemetryShip.id ?? "") ===
-        String(selectedShip.mmsi ?? selectedShip.id ?? "")
-    );
+    // Display route line if route telemetry playback is active for this ship
+    const isTelemetryActive = Boolean(routeTelemetryShip);
 
     if (isTelemetryActive && coords.length > 1) {
       features.push({ type: "Feature", properties: { kind: "playback-route" }, geometry: { type: "LineString", coordinates: coords } });
@@ -1375,7 +1379,7 @@ function LTmap({
     for (const id of ["selected-ship-vessel", "selected-ship-vessel-name", "selected-ship-halo"]) {
       if (mapRef.current?.getLayer(id)) mapRef.current.setLayoutProperty(id, "visibility", "visible");
     }
-  }, [selectedShip, routeTelemetryShip]);
+  }, [selectedShip, routeTelemetryShip, mapReady]);
   useEffect(() => {
     if (!liveTrackedShip) return;
     const liveId = String(liveTrackedShip.mmsi || liveTrackedShip.id || "");
@@ -3920,7 +3924,17 @@ function LTmap({
             onShipSelect?.(null);
           }}
           onOpenRouteTelemetry={(shipToTrack) => {
+            setSelectedShip(null);
+            onShipSelect?.(null);
             setRouteTelemetryShip(shipToTrack);
+            const lat = Number(shipToTrack.lat);
+            const lng = Number(shipToTrack.lng);
+            if (mapRef.current && Number.isFinite(lat) && Number.isFinite(lng)) {
+              mapRef.current.easeTo({
+                center: [lng, lat],
+                duration: 1000,
+              });
+            }
           }}
           onOpenFullDetails={(shipForDetails) => {
             setFullDetailsShip(shipForDetails);

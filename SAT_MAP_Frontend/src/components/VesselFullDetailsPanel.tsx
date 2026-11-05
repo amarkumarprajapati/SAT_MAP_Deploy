@@ -2,11 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Anchor, Clock3, MapPin, Route, Ship, X } from "lucide-react";
+import { resolveShipFlag } from "@/lib/maritime-route";
 import { api } from "@/config/api";
-
-type VesselRecord = Record<string, unknown> & {
-  track?: Array<Record<string, unknown>>;
-};
+import type { VesselRecord, VesselFullDetailsPanelProps } from "@/helper";
 
 function displayValue(key: string, value: unknown): string {
   if (value === null || value === undefined || value === "")
@@ -35,10 +33,7 @@ function labelFor(key: string): string {
 export default function VesselFullDetailsPanel({
   ship,
   onClose,
-}: {
-  ship: Record<string, unknown>;
-  onClose: () => void;
-}) {
+}: VesselFullDetailsPanelProps) {
   const mmsi = String(ship.mmsi ?? ship.id ?? "");
   const [result, setResult] = useState<{
     mmsi: string;
@@ -111,6 +106,16 @@ export default function VesselFullDetailsPanel({
   const lng = Number(data?.lng ?? ship.lng);
   const distance = Number(data?.trackDistanceKm ?? ship.trackDistanceKm ?? 0);
 
+  const countryInfo = useMemo(() => {
+    return resolveShipFlag(
+      mmsi,
+      (data?.countryCode as string) ||
+        (data?.flag as string) ||
+        (ship.flag as string) ||
+        (ship.country as string),
+    );
+  }, [mmsi, data?.countryCode, data?.flag, ship.flag, ship.country]);
+
   return (
     <aside
       className="pointer-events-auto fixed right-3 top-[76px] bottom-[36px] z-[250] flex w-[370px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-2xl border border-cyan-400/30 bg-[#07101df5] text-white backdrop-blur-2xl"
@@ -122,8 +127,11 @@ export default function VesselFullDetailsPanel({
             <Ship size={16} />
           </span>
           <div className="min-w-0">
-            <div className="font-mono text-[8px] font-bold tracking-[.18em] text-cyan-300">
-              VESSEL DATA · BACKEND AIS
+            <div className="flex items-center gap-1.5 font-mono text-[8px] font-bold tracking-[.18em] text-cyan-300">
+              <span>VESSEL DATA · BACKEND AIS</span>
+              <span className="rounded bg-cyan-400/20 px-1 py-0.2 text-[8px] text-cyan-200">
+                {countryInfo.code}
+              </span>
             </div>
             <h2
               className="mt-1 truncate text-sm font-bold tracking-wide"
@@ -131,8 +139,11 @@ export default function VesselFullDetailsPanel({
             >
               {currentName}
             </h2>
-            <div className="mt-0.5 font-mono text-[9px] text-zinc-400">
-              MMSI {mmsi || "Not reported"}
+            <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[9px] text-zinc-400">
+              <span className="text-xs select-none">{countryInfo.flag}</span>
+              <span>{countryInfo.country}</span>
+              <span className="text-zinc-600">•</span>
+              <span>MMSI {mmsi || "Not reported"}</span>
             </div>
           </div>
         </div>

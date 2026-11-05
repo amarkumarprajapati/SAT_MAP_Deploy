@@ -17,14 +17,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { api } from "@/config/api";
-
-type TrackPoint = {
-  lat: number;
-  lng: number;
-  timestamp?: number | string;
-  speed?: number;
-  heading?: number;
-};
+import type { TrackPoint, ShipRoutePlaybackBarProps } from "@/helper";
 
 function timestampMs(value: unknown): number | null {
   const numeric = Number(value);
@@ -68,10 +61,7 @@ function formatUtcDateTime(value: unknown): string {
 export default function ShipRoutePlaybackBar({
   ship,
   onClose,
-}: {
-  ship: Record<string, unknown>;
-  onClose: () => void;
-}) {
+}: ShipRoutePlaybackBarProps) {
   const shipId = String(ship.mmsi ?? ship.id ?? "");
   const [fetchedTrack, setFetchedTrack] = useState<TrackPoint[] | null>(null);
   const [loadingTrack, setLoadingTrack] = useState(false);
@@ -154,6 +144,30 @@ export default function ShipRoutePlaybackBar({
   const [playbackSpeed, setPlaybackSpeed] = useState<1 | 2 | 5>(1);
   const [currentUtcTime, setCurrentUtcTime] = useState<string>("");
 
+  const progressRef = useRef(0);
+  const startTimeRef = useRef(0);
+  const animationRef = useRef<number | null>(null);
+
+  const [activePlaybackId, setActivePlaybackId] = useState(shipId);
+  if (activePlaybackId !== shipId) {
+    setActivePlaybackId(shipId);
+    setPlaying(false);
+    setProgress(0);
+    progressRef.current = 0;
+    setCurrentUtcTime("");
+    if (animationRef.current != null) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+  }
+
+  // Derive initial or interpolated UTC time deterministically
+  const displayUtcTime =
+    currentUtcTime ||
+    (route[0]?.timestamp
+      ? formatUtcDateTime(route[0].timestamp)
+      : "UTC TIME NOT REPORTED");
+
   // Live interpolated metrics for user telemetry display
   const [currentLat, setCurrentLat] = useState<number>(Number(ship.lat || 0));
   const [currentLng, setCurrentLng] = useState<number>(Number(ship.lng || 0));
@@ -163,10 +177,6 @@ export default function ShipRoutePlaybackBar({
   const [currentHeading, setCurrentHeading] = useState<number>(
     Number(ship.heading || ship.course || 0),
   );
-
-  const progressRef = useRef(0);
-  const startTimeRef = useRef(0);
-  const animationRef = useRef<number | null>(null);
 
   const shipName = String(ship.name || `VESSEL ${shipId}`).toUpperCase();
   const vesselType = String(ship.type || "CARGO").toUpperCase();
@@ -242,19 +252,6 @@ export default function ShipRoutePlaybackBar({
   useEffect(() => {
     progressRef.current = progress;
   }, [progress]);
-
-  useEffect(() => {
-    setPlaying(false);
-    setProgress(0);
-    progressRef.current = 0;
-    if (animationRef.current != null)
-      cancelAnimationFrame(animationRef.current);
-    if (route[0]?.timestamp) {
-      setCurrentUtcTime(formatUtcDateTime(route[0].timestamp));
-    } else {
-      setCurrentUtcTime("UTC TIME NOT REPORTED");
-    }
-  }, [shipId, route]);
 
   useEffect(() => {
     if (!playing || route.length < 2) return;
@@ -376,7 +373,7 @@ export default function ShipRoutePlaybackBar({
         <div className="relative flex-1 flex flex-col justify-center min-w-[220px] px-1">
           <div className="flex items-center justify-between text-[11px] font-mono select-text">
             <span className="font-extrabold tracking-wide text-cyan-300 truncate">
-              {currentUtcTime || "UTC TIME NOT REPORTED"}
+              {displayUtcTime}
             </span>
             <span className="text-[10px] text-zinc-400">
               {Math.round(progress * 100)}%
