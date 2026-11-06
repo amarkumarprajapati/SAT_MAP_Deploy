@@ -28,7 +28,6 @@ import {
   Pause,
   Rewind,
   Eraser,
-  Layers3,
   SlidersHorizontal,
   ZoomIn,
   ZoomOut,

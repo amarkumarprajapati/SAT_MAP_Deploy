@@ -1,4 +1,4 @@
-﻿export type WindPoint = { lat: number; lon: number; speed: number; direction: number };
+export type WindPoint = { lat: number; lon: number; speed: number; direction: number };
 type Vector = { u: number; v: number };
 export type WindField = (lon: number, lat: number) => Vector;
 const wrap = (lon: number) => ((lon + 180) % 360 + 360) % 360 - 180;
@@ -35,6 +35,7 @@ export function createWindField(points: WindPoint[]): WindField {
 // for valid vectors. The small polar margin avoids Mercator's exact-pole singularity.
 export function createWindTexture(field: WindField, width = 360, height = 180) {
   const wind = new Uint8ClampedArray(width * height * 4);
+  const speed = new Uint8ClampedArray(width * height * 4);
   for (let y = 0; y < height; y++) {
     const lat = 89.9 - (y + 0.5) / height * 179.8;
     for (let x = 0; x < width; x++) {
@@ -45,7 +46,15 @@ export function createWindTexture(field: WindField, width = 360, height = 180) {
       wind[offset + 1] = Math.round(Math.max(0, Math.min(255, (v + 50) / 100 * 255)));
       wind[offset + 2] = 255;
       wind[offset + 3] = 255;
+
+      // Speed scalar: max speed normalized to 45 m/s (~162 km/h) for raster heatmap
+      const spd = Math.sqrt(u * u + v * v);
+      const normalizedSpeed = Math.round(Math.max(0, Math.min(255, (spd / 45) * 255)));
+      speed[offset] = normalizedSpeed;
+      speed[offset + 1] = normalizedSpeed;
+      speed[offset + 2] = 0; // Blue <= 0.6 means valid data in SmoothRaster single-band
+      speed[offset + 3] = 255;
     }
   }
-  return { wind, width, height };
+  return { wind, speed, width, height };
 }
