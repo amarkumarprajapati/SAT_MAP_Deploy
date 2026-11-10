@@ -1763,6 +1763,9 @@ function LTmap({
       zoom: 1.8,
       minZoom: 1.5,
       maxZoom: 18,
+      // Wind particles use one global [-180°, 180°] field. Repeating the
+      // basemap beyond that extent creates a visible copy with no particles.
+      renderWorldCopies: false,
       doubleClickZoom: false,
       attributionControl: {
         compact: true,
