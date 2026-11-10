@@ -12,7 +12,9 @@ docker compose up -d --build
 
 Start the stack once with `docker compose up -d --build`. After that, edit files normally; frontend edits hot reload in the browser and backend Python edits reload automatically. Use `docker compose ps` or `docker compose logs -f frontend backend` to inspect the services.
 
-If frontend dependencies change in `package.json` or `package-lock.json`, run `docker compose exec frontend npm ci` to refresh the mounted dependency volume. Backend dependency changes require `docker compose build backend` followed by `docker compose up -d backend`.
+The Docker frontend explicitly uses Webpack with polling so Windows bind-mount edits trigger Fast Refresh. It runs `npm ci` on every container startup to keep the persistent dependency volume aligned with `package-lock.json`; startup needs access to the npm registry and can take a little longer. If frontend dependencies change in `package.json` or `package-lock.json`, run `docker compose restart frontend`. Backend dependency changes require `docker compose build backend` followed by `docker compose up -d backend`. OSINT runs compiled code; OSINT source changes require `docker compose up -d --build osint`.
+
+After pulling changes to `compose.yaml`, run `docker compose up -d frontend` to apply the updated startup command. Open `http://localhost:7890` directly for development. If an already-open tab still shows an old screen after the server is ready, refresh it once with Ctrl+Shift+R. Normal frontend source edits then appear through Fast Refresh without a container restart.
 
 Open `http://localhost:7890` for the app. MySQL is available to tools on the Compose network at host `mysql`, port `3306`; connect with the `MYSQL_USER` and `MYSQL_PASSWORD` values from the root `.env` and select `MYSQL_DATABASE`. The database persists in the `mysql_data` volume. The previous SQLite snapshots are imported automatically the first time MySQL starts with an empty snapshots table.
 

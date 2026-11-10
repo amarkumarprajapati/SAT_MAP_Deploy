@@ -34,7 +34,8 @@ import {
   Newspaper,
   Film,
   ScanLine,
-  Wind,
+  PanelLeftClose,
+  PanelLeftOpen,
   Ship,
 } from "lucide-react";
 import ScaleBar from "@/components/ScaleBar";
@@ -567,7 +568,7 @@ export default function Dashboard() {
     radiation: false,
     live_clouds: false,
     day_night: false,
-    wind: false,
+    wind: true,
   });
 
   const [capabilities] = useState<Record<string, boolean>>({});
@@ -1397,28 +1398,6 @@ export default function Dashboard() {
                   </>
                 )}
               </div>
-              {/* Wind streamlines toggle inside area */}
-              <div className="mt-2.5 flex items-center justify-between rounded-lg border border-white/10 bg-[#09131f] p-2.5">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Wind size={15} className={activeLayers.wind ? "text-emerald-400" : "text-zinc-500"} />
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold text-zinc-100">Wind streamlines</div>
-                    <div className="truncate text-[9px] text-zinc-400">Animated 10 m wind flow in area</div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveLayers((prev) => ({ ...prev, wind: !prev.wind }))}
-                  className={`rounded border px-2.5 py-1 font-mono text-[9px] font-bold transition cursor-pointer ${
-                    activeLayers.wind
-                      ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
-                      : "border-white/15 bg-white/5 text-zinc-400 hover:text-white"
-                  }`}
-                >
-                  {activeLayers.wind ? "ACTIVE" : "SHOW"}
-                </button>
-              </div>
-
               {/* Maritime vessels in area */}
               <section className="mt-2 rounded-lg border border-cyan-300/15 bg-cyan-400/[0.04] p-2.5">
                 <div className="flex items-center justify-between">
@@ -1844,16 +1823,6 @@ export default function Dashboard() {
             </button>
             <button
               type="button"
-              title={activeLayers.wind ? "Hide wind streamlines" : "Show wind streamlines"}
-              aria-label={activeLayers.wind ? "Hide wind streamlines" : "Show wind streamlines"}
-              aria-pressed={!!activeLayers.wind}
-              onClick={() => setActiveLayers((layers) => ({ ...layers, wind: !layers.wind }))}
-              className={`rounded-md p-1.5 transition-colors hover:bg-white/10 hover:text-emerald-200 ${activeLayers.wind ? "text-emerald-300" : ""}`}
-            >
-              <Wind size={15} />
-            </button>
-            <button
-              type="button"
               title="Zoom out"
               aria-label="Zoom out"
               onClick={() =>
@@ -2009,6 +1978,16 @@ export default function Dashboard() {
         </div>
       </motion.header>
 
+      <button
+        type="button"
+        onClick={() => setShowLayers((visible) => !visible)}
+        aria-label={showLayers ? "Hide layers sidebar" : "Show layers sidebar"}
+        title={showLayers ? "Hide layers sidebar" : "Show layers sidebar"}
+        aria-expanded={showLayers}
+        className="fixed left-3 top-3 z-[250] pointer-events-auto flex h-9 w-9 items-center justify-center rounded-xl border border-white/20 bg-[#080b10]/90 text-zinc-200 shadow-lg backdrop-blur-md transition hover:border-cyan-300/50 hover:text-cyan-200"
+      >
+        {showLayers ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+      </button>
       {showLayers && (
         <div data-hud>
           <LayerPanel

@@ -69,7 +69,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
         description: 'Solar terminator & shadow',
         color: '#F59E0B',
       },
-      { key: 'wind', label: 'Wind streamlines', dataKey: '', description: 'Animated 10 m wind flow · Open-Meteo', color: '#67e8c5', icon: Wind },
+      { key: 'wind', label: 'Wind flow', dataKey: '', description: 'Live global wind · Open-Meteo', color: '#E2E8F0', icon: Wind },
     ],
   },
 ];

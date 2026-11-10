@@ -6,7 +6,7 @@ import { createWindField, createWindTexture, type WindPoint } from '@/lib/wind-f
 
 type Status = 'loading' | 'ready' | 'error';
 
-function imageUrl(pixels: Uint8ClampedArray, width: number, height: number) {
+function toPng(pixels: Uint8ClampedArray, width: number, height: number) {
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -18,117 +18,62 @@ function imageUrl(pixels: Uint8ClampedArray, width: number, height: number) {
   return canvas.toDataURL('image/png');
 }
 
-// Ventusky / Windy style color gradient stops (value in normalized [0, 1] range corresponding to 0 to 45 m/s)
-// Soft deep navy -> rich indigo/purple -> teal -> vibrant cyan -> bright turquoise
-const WIND_COLORMAP: Array<[number, [number, number, number]]> = [
-  [0.0, [26, 32, 70]],      // 0 km/h: deep navy/indigo
-  [0.05, [48, 54, 115]],    // ~8 km/h: dark soft purple-navy
-  [0.12, [72, 60, 138]],    // ~20 km/h: indigo violet
-  [0.22, [63, 85, 156]],    // ~35 km/h: blue purple
-  [0.35, [41, 128, 168]],   // ~55 km/h: ocean blue
-  [0.48, [38, 166, 172]],   // ~78 km/h: teal
-  [0.62, [68, 206, 178]],   // ~100 km/h: bright turquoise
-  [0.78, [130, 230, 160]],  // ~126 km/h: lime mint
-  [0.90, [220, 245, 140]],  // ~145 km/h: pale bright yellow-green
-  [1.0, [255, 250, 180]],   // 160+ km/h: warm bright yellow
-];
-
+/** Open-Meteo wind vectors rendered as subtle white particles in 2D and 3D. */
 export default function WindLayer({ map }: { map: Map }) {
   const [status, setStatus] = useState<Status>('loading');
 
   useEffect(() => {
     let disposed = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let raster: import('mapbox-exif-layer').SmoothRaster | undefined;
-    let particles: import('mapbox-exif-layer').NewParticleMotion | undefined;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
+    let particles: import('mapbox-exif-layer').NewParticleMotion | undefined;
 
     const load = async () => {
       try {
-        const [response, wind] = await Promise.all([
-          fetch('/api/weather/wind-data?grid=polar', { signal: controller.signal }),
+        const [response, windModule] = await Promise.all([
+          fetch('/api/weather/wind-data?grid=global', { signal: controller.signal }),
           import('mapbox-exif-layer'),
         ]);
-        if (!response.ok) throw new Error(`Wind data request failed (${response.status})`);
+        if (!response.ok) throw new Error(`Wind request failed (${response.status})`);
         const data: { points: WindPoint[] } = await response.json();
-        const texture = createWindTexture(createWindField(data.points));
+        const texture = createWindTexture(createWindField(data.points), 720, 360);
         if (disposed) return;
 
-        const bounds: [number, number, number, number] = [-180, 89.9, 180, -89.9];
-        const windUrl = imageUrl(texture.wind, texture.width, texture.height);
-        const speedUrl = imageUrl(texture.speed, texture.width, texture.height);
-
-        // 1. SmoothRaster: Continuous, smooth colored wind speed field (Ventusky/Windy style)
-        if (raster) {
-          raster.setSource(speedUrl);
-        } else {
-          raster = new wind.SmoothRaster({
-            id: 'wind-speed-raster',
-            source: speedUrl,
-            bounds,
-            sourceType: 'jpeg',
-            mapRuntime: 'maplibre',
-            readyForDisplay: true,
-            opacity: 0.78,
-            color: WIND_COLORMAP,
-            scalarValueRange: [0, 1],
-          });
-          try {
-            map.addLayer(raster as unknown as CustomLayerInterface, 'day-night-fill');
-          } catch (error) {
-            if (map.getLayer('wind-speed-raster')) map.removeLayer('wind-speed-raster');
-            raster = undefined;
-            console.warn('[wind] Could not add smooth wind speed raster:', error);
-          }
-        }
-
-        // 2. NewParticleMotion: Flowing, smooth wind streamlines on top of the colored field
+        const source = toPng(texture.wind, texture.width, texture.height);
         if (particles) {
-          particles.setSource(windUrl);
+          particles.setSource(source);
         } else {
-          particles = new wind.NewParticleMotion({
-            id: 'wind-particles',
-            source: windUrl,
-            bounds,
-            sourceType: 'auto',
-            mapRuntime: 'maplibre',
-            readyForDisplay: true,
-            unit: 'mps',
-            velocityRange: [-50, 50],
-            // Dense, smooth flowing streamlines matching Ventusky & Windy
-            particleCount: (zoom) => (zoom < 3 ? 6500 : zoom < 6 ? 4800 : zoom < 9 ? 3200 : 1600),
-            updateInterval: 35, // Smooth ~30-60 fps animation updates
-            velocityFactor: 0.045, // Fluid, realistic motion speed
-            pointSize: 1.8,
-            trailLength: 14,
-            fadeOpacity: 0.88,
-            trailSizeDecay: 0.92,
-            ageThreshold: 0.25,
-            maxAge: 110,
-            // White-cyan flowing streamlines that contrast beautifully against the colored heatmap
-            color: [
-              [0, [255, 255, 255]],
-              [8, [240, 250, 255]],
-              [16, [210, 245, 255]],
-              [30, [180, 240, 255]],
-            ],
+          particles = new windModule.NewParticleMotion({
+          id: 'wind-particles',
+          source,
+          bounds: [-180, 89.9, 180, -89.9],
+          sourceType: 'auto',
+          mapRuntime: 'maplibre',
+          readyForDisplay: true,
+          unit: 'mps',
+          velocityRange: [-50, 50],
+          // Keep the global view readable and movement calm at every zoom.
+          particleCount: (zoom) => zoom < 3 ? 2400 : zoom < 6 ? 1900 : zoom < 9 ? 1200 : 700,
+          updateInterval: 55,
+          velocityFactor: 0.018,
+          pointSize: 1.2,
+          trailLength: 5,
+          fadeOpacity: 0.94,
+          trailSizeDecay: 0.94,
+          ageThreshold: 0.25,
+          maxAge: 100,
+          color: [[0, [255, 255, 255]], [50, [255, 255, 255]]],
           });
-          try {
-            map.addLayer(particles as unknown as CustomLayerInterface, 'day-night-fill');
-          } catch (error) {
-            if (map.getLayer('wind-particles')) map.removeLayer('wind-particles');
-            particles = undefined;
-            throw error;
-          }
+          map.addLayer(particles as unknown as CustomLayerInterface,
+            map.getLayer('day-night-fill') ? 'day-night-fill' : undefined);
         }
-
         setStatus('ready');
-        timer = setTimeout(load, 60 * 60 * 1000);
+        refreshTimer = setTimeout(load, 60 * 60 * 1000);
       } catch (error) {
         if (disposed) return;
-        console.warn('[wind] Could not load wind layer:', error);
+        console.warn('[wind] Could not load global wind:', error);
         setStatus('error');
-        timer = setTimeout(load, 60 * 1000);
+        refreshTimer = setTimeout(load, 60 * 1000);
       }
     };
 
@@ -136,28 +81,15 @@ export default function WindLayer({ map }: { map: Map }) {
     return () => {
       disposed = true;
       controller.abort();
-      if (timer) clearTimeout(timer);
+      if (refreshTimer) clearTimeout(refreshTimer);
       if (map.getLayer('wind-particles')) map.removeLayer('wind-particles');
-      if (map.getLayer('wind-speed-raster')) map.removeLayer('wind-speed-raster');
     };
   }, [map]);
 
   return (
-    <div
-      role="status"
-      className="pointer-events-none absolute bottom-40 left-4 z-[210] rounded-xl border border-cyan-400/30 bg-[#070b14]/90 px-3.5 py-2 text-[10px] text-cyan-50 shadow-xl backdrop-blur-md"
-    >
-      <div className="flex items-center gap-1.5 font-mono font-semibold uppercase tracking-wider">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-        Wind & Atmospheric Flow · 10 m
-      </div>
-      <div className="mt-1 font-mono text-white/70">
-        {status === 'loading'
-          ? 'Loading live wind field…'
-          : status === 'error'
-          ? 'Wind unavailable · retrying'
-          : 'Open-Meteo · Ventusky/Windy styled streamlines'}
-      </div>
+    <div role="status" className="pointer-events-none absolute bottom-40 left-4 z-[210] rounded-xl border border-white/15 bg-[#070b14]/85 px-3 py-1.5 font-mono text-[9px] text-white/75 shadow-lg backdrop-blur-md">
+      <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-white/80" />
+      {status === 'loading' ? 'Loading live wind…' : status === 'error' ? 'Wind data unavailable · retrying' : 'LIVE WIND · Open-Meteo'}
     </div>
   );
 }
