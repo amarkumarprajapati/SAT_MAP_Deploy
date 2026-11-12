@@ -55,6 +55,33 @@ import {
 } from "@/lib/vessel-size";
 import { calculateVoyageDetails } from "@/lib/maritime-route";
 
+function densifyTrack(points: [number, number][]): [number, number][] {
+  const result: [number, number][] = [];
+  const rad = Math.PI / 180;
+  const xyz = (lon: number, lat: number) => [Math.cos(lat * rad) * Math.cos(lon * rad), Math.cos(lat * rad) * Math.sin(lon * rad), Math.sin(lat * rad)];
+  for (let i = 0; i < points.length; i++) {
+    if (i === 0) { result.push(points[i]); continue; }
+    const [lon1, lat1] = points[i - 1];
+    const rawLon2 = points[i][0], lat2 = points[i][1];
+    const lon2 = lon1 + ((((rawLon2 - lon1) + 540) % 360) - 180);
+    const a = xyz(lon1, lat1), b = xyz(lon2, lat2);
+    const angle = Math.acos(Math.max(-1, Math.min(1, a[0]*b[0] + a[1]*b[1] + a[2]*b[2])));
+    const steps = Math.max(1, Math.ceil(angle / (0.5 * rad)));
+    for (let j = 1; j <= steps; j++) {
+      const t = j / steps, denom = Math.sin(angle) || 1;
+      const x = Math.sin((1-t)*angle)/denom*a[0] + Math.sin(t*angle)/denom*b[0];
+      const y = Math.sin((1-t)*angle)/denom*a[1] + Math.sin(t*angle)/denom*b[1];
+      const z = Math.sin((1-t)*angle)/denom*a[2] + Math.sin(t*angle)/denom*b[2];
+      let lon = Math.atan2(y, x) / rad;
+      const prevLon = result[result.length - 1][0];
+      while (lon - prevLon > 180) lon -= 360;
+      while (lon - prevLon < -180) lon += 360;
+      result.push([lon, Math.atan2(z, Math.hypot(x, y)) / rad]);
+    }
+  }
+  return result;
+}
+
 function SatellitePlaybackBar({
   satellite,
   time,
@@ -1256,6 +1283,7 @@ function LTmap({
       const coords = detail.route
         .map((p) => [Number(p.lng), Number(p.lat)] as [number, number])
         .filter((p) => p.every(Number.isFinite));
+      const curvedCoords = densifyTrack(coords);
       const routeSource = map.getSource("selected-ship-route") as
         | maplibregl.GeoJSONSource
         | undefined;
@@ -1543,9 +1571,8 @@ function LTmap({
       )
       .filter((point) => point.every(Number.isFinite));
 
-    if (coords.length < 2 && voyage.trackCoordinates.length > 1) {
-      coords = voyage.trackCoordinates;
-    }
+    // Historical track mode must show only recorded AIS fixes; never replace
+    // missing history with the estimated start-to-current voyage line.
 
     const features: GeoJSON.Feature[] = [];
 
@@ -1576,7 +1603,7 @@ function LTmap({
       features.push({
         type: "Feature",
         properties: { kind: "playback-route" },
-        geometry: { type: "LineString", coordinates: coords },
+        geometry: { type: "LineString", coordinates: densifyTrack(coords) },
       });
       features.push({
         type: "Feature",
@@ -2110,10 +2137,9 @@ function LTmap({
           false,
         ],
         paint: {
-          "line-color": "#FFFFFF",
-          "line-opacity": 0.85,
-          "line-dasharray": [1.5, 1.5],
-          "line-width": 1.5,
+          "line-color": ["coalesce", ["get", "color"], "#50F7FF"],
+          "line-opacity": 0.95,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 1, 1.5, 5, 2.25, 10, 3],
         },
       });
       map.addLayer({
@@ -2902,10 +2928,10 @@ function LTmap({
     const line = map.getLayer("sat-footprint-line");
     const laser = map.getLayer("sat-footprint-laser");
     if (!fill || !line || !laser) return;
-    // Show coverage through the moving cone only, without a separate horizon disc or ring.
-    map.setLayoutProperty("sat-footprint-fill", "visibility", "none");
-    map.setLayoutProperty("sat-footprint-line", "visibility", "none");
-    // The footprint needs only one boundary; do not overlay a second glowing outline.
+    // Keep a subtle coverage tint with a crisp colored perimeter.
+    const showFootprint = showSatCircumference && !laserView;
+    map.setLayoutProperty("sat-footprint-fill", "visibility", showFootprint ? "visible" : "none");
+    map.setLayoutProperty("sat-footprint-line", "visibility", showFootprint ? "visible" : "none");
     map.setLayoutProperty("sat-footprint-laser", "visibility", "none");
   }, [mapReady, laserView, activeLayers.rf_coverage, showSatCircumference]);
 

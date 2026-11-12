@@ -59,8 +59,7 @@ services:
       APP_ENV: development
       HOST: 0.0.0.0
       PORT: 8569
-      RELOAD: "true"
-      WATCHFILES_FORCE_POLLING: "true"
+      RELOAD: "false"
       DATABASE_HOST: mysql
       DATABASE_PORT: 3306
       DATABASE_NAME: ${MYSQL_DATABASE:-sat_map}

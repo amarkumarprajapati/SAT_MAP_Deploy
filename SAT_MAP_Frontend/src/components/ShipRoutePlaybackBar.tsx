@@ -194,9 +194,17 @@ export default function ShipRoutePlaybackBar({
       const portion = Math.max(0, segment - index);
       const a = route[index],
         b = route[index + 1];
-      const lat = a.lat + (b.lat - a.lat) * portion;
       const lngDelta = ((b.lng - a.lng + 540) % 360) - 180;
-      const lng = ((a.lng + lngDelta * portion + 540) % 360) - 180;
+      const rad = Math.PI / 180;
+      const toVector = (lat: number, lng: number) => [Math.cos(lat * rad) * Math.cos(lng * rad), Math.cos(lat * rad) * Math.sin(lng * rad), Math.sin(lat * rad)];
+      const va = toVector(a.lat, a.lng), vb = toVector(b.lat, a.lng + lngDelta);
+      const omega = Math.acos(Math.max(-1, Math.min(1, va[0]*vb[0] + va[1]*vb[1] + va[2]*vb[2])));
+      const denom = Math.sin(omega) || 1;
+      const x = Math.sin((1-portion)*omega)/denom*va[0] + Math.sin(portion*omega)/denom*vb[0];
+      const y = Math.sin((1-portion)*omega)/denom*va[1] + Math.sin(portion*omega)/denom*vb[1];
+      const z = Math.sin((1-portion)*omega)/denom*va[2] + Math.sin(portion*omega)/denom*vb[2];
+      const lat = Math.atan2(z, Math.hypot(x, y)) / rad;
+      const lng = ((Math.atan2(y, x) / rad + 540) % 360) - 180;
       const heading =
         (Math.atan2(
           Math.sin(((b.lng - a.lng) * Math.PI) / 180) *

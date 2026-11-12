@@ -5,6 +5,7 @@ import json
 import logging
 import sqlite3
 import warnings
+import random
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,30 @@ _sqlite: sqlite3.Connection | None = None
 _lock = asyncio.Lock()
 
 
+async def _connect_mysql_with_retry() -> aiomysql.Pool:
+    """Wait for MySQL to accept connections after Compose reports it healthy."""
+    attempts = 12
+    for attempt in range(attempts):
+        try:
+            return await aiomysql.create_pool(
+                host=settings.DATABASE_HOST,
+                port=settings.DATABASE_PORT,
+                db=settings.DATABASE_NAME,
+                user=settings.DATABASE_USER,
+                password=settings.DATABASE_PASSWORD,
+                minsize=1,
+                maxsize=settings.DATABASE_POOL_SIZE,
+                autocommit=False,
+                connect_timeout=settings.DATABASE_COMMAND_TIMEOUT,
+            )
+        except (aiomysql.OperationalError, OSError):
+            if attempt + 1 == attempts:
+                raise
+            delay = min(2 ** attempt, 15) + random.uniform(0, 0.5)
+            logger.warning("MySQL is not accepting connections yet; retrying in %.1fs (%d/%d)", delay, attempt + 1, attempts)
+            await asyncio.sleep(delay)
+
+
 def _mysql_configured() -> bool:
     return all((settings.DATABASE_HOST, settings.DATABASE_NAME, settings.DATABASE_USER, settings.DATABASE_PASSWORD))
 
@@ -32,17 +57,7 @@ async def connect() -> None:
     if _mysql_configured():
         pool = None
         try:
-            pool = await aiomysql.create_pool(
-                host=settings.DATABASE_HOST,
-                port=settings.DATABASE_PORT,
-                db=settings.DATABASE_NAME,
-                user=settings.DATABASE_USER,
-                password=settings.DATABASE_PASSWORD,
-                minsize=1,
-                maxsize=settings.DATABASE_POOL_SIZE,
-                autocommit=False,
-                connect_timeout=settings.DATABASE_COMMAND_TIMEOUT,
-            )
+            pool = await _connect_mysql_with_retry()
             async with pool.acquire() as connection:
                 async with connection.cursor() as cursor:
                     await cursor.execute(
