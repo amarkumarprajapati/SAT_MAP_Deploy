@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import "./globals.css";
-import "maplibre-gl/dist/maplibre-gl.css";
+import "leaflet/dist/leaflet.css";
 
 export const viewport: Viewport = {
   themeColor: "#0072CE",

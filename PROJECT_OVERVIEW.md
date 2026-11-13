@@ -37,7 +37,7 @@ The application comprises three core sub-services packaged into a single desktop
 * **Framework**: Next.js 16 (App Router), React 19, TypeScript.
 * **Styling & Components**: Tailwind CSS v4, Ant Design, Lucide Icons, Framer Motion.
 * **Geospatial & Mapping**:
-  * **MapLibre GL & React Map GL**: Custom vector tile styles (`dark-matter-style.json`), high-performance WebGL rendering.
+  * **Leaflet & Three.js**: Raster-tile 2D maps plus a custom interactive WebGL globe. Core satellite and maritime markers are shared between both views.
   * **`satellite.js`**: Client-side SGP4/SDP4 orbit propagation, footprint calculation, and ground track generation.
 * **Charts & Media**:
   * **Lightweight Charts**: Telemetry and financial/signal timeseries.

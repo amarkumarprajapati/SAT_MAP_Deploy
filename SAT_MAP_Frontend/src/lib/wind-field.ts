@@ -30,31 +30,3 @@ export function createWindField(points: WindPoint[]): WindField {
     return { u: mix(u), v: mix(v) };
   };
 }
-
-// PNG channels required by mapbox-exif-layer: U/V in red/green and blue=255
-// for valid vectors. The small polar margin avoids Mercator's exact-pole singularity.
-export function createWindTexture(field: WindField, width = 360, height = 180) {
-  const wind = new Uint8ClampedArray(width * height * 4);
-  const speed = new Uint8ClampedArray(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    const lat = 89.9 - (y + 0.5) / height * 179.8;
-    for (let x = 0; x < width; x++) {
-      const lon = (x + 0.5) / width * 360 - 180;
-      const { u, v } = field(lon, lat);
-      const offset = (y * width + x) * 4;
-      wind[offset] = Math.round(Math.max(0, Math.min(255, (u + 50) / 100 * 255)));
-      wind[offset + 1] = Math.round(Math.max(0, Math.min(255, (v + 50) / 100 * 255)));
-      wind[offset + 2] = 255;
-      wind[offset + 3] = 255;
-
-      // Speed scalar: max speed normalized to 45 m/s (~162 km/h) for raster heatmap
-      const spd = Math.sqrt(u * u + v * v);
-      const normalizedSpeed = Math.round(Math.max(0, Math.min(255, (spd / 45) * 255)));
-      speed[offset] = normalizedSpeed;
-      speed[offset + 1] = normalizedSpeed;
-      speed[offset + 2] = 0; // Blue <= 0.6 means valid data in SmoothRaster single-band
-      speed[offset + 3] = 255;
-    }
-  }
-  return { wind, speed, width, height };
-}

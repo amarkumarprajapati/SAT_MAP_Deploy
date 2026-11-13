@@ -1,6 +1,6 @@
 # SAT_MAP (Frontend)
 
-Interactive satellite, maritime, and global situational intelligence map dashboard built with Next.js, React, and MapLibre GL.
+Interactive satellite, maritime, and global situational intelligence dashboard built with Next.js and React. The core map uses Leaflet for 2D and a custom Three.js globe for 3D.
 
 ---
 

@@ -33,7 +33,6 @@ import {
   ZoomOut,
   Newspaper,
   Film,
-  ScanLine,
   PanelLeftClose,
   PanelLeftOpen,
   Ship,
@@ -41,7 +40,7 @@ import {
 import ScaleBar from "@/components/ScaleBar";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import KeyboardShortcuts from "@/components/KeyboardShortcuts";
-const LTmap = dynamic(() => import("@/components/LTmap"), { ssr: false });
+const LTmap = dynamic(() => import("@/components/LeafletCoreMap"), { ssr: false });
 const LayerPanel = dynamic(() => import("@/components/LayerPanel"));
 import DashboardOverlay from "@/components/DashboardOverlay";
 import RightTacticalDock from "@/components/RightTacticalDock";
@@ -549,7 +548,6 @@ export default function Dashboard() {
   const [mapProjection, setMapProjection] = useState<"globe" | "mercator">(
     "globe",
   );
-  const [laserView, setLaserView] = useState(false);
   const [mapStyle, setMapStyle] = useState<"dark" | "satellite">("dark");
 
   const [activeLayers, setActiveLayers] = useState<Record<string, boolean>>({
@@ -1189,7 +1187,6 @@ export default function Dashboard() {
           data={mapData}
           activeLayers={activeLayers}
           projection={mapProjection === "mercator" ? "mercator" : "globe"}
-          laserView={laserView}
           mapStyle={mapStyle === "satellite" ? "satellite" : "dark"}
           onEntityClick={handleEntityClick}
           onMouseCoords={handleMouseCoords}
@@ -1717,15 +1714,6 @@ export default function Dashboard() {
             icon={MapPinned}
             label="2D"
           />
-          <ViewSegment
-            layoutId="view-laser"
-            active={laserView}
-            onClick={() => setLaserView((value) => !value)}
-            title="Toggle laser coverage view"
-            icon={ScanLine}
-            label="LASER"
-          />
-          <div className="w-px h-5 mx-0.5 bg-white/20" />
           <ViewSegment
             layoutId="view-style"
             active={mapStyle === "dark"}

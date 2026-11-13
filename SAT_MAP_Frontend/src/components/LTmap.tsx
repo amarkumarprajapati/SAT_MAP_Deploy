@@ -23,7 +23,6 @@ import SatelliteCard, {
 import SatelliteIntelSidebar from "@/components/SatelliteIntelSidebar";
 import SatelliteVesselsSlider from "@/components/SatelliteVesselsSlider";
 import MapControls from "@/components/MapControls";
-import WindLayer from "@/components/WindLayer";
 import MapPopups, { createHomeMarkerPopup } from "@/components/MapPopups";
 import { attachTerrain } from "@/lib/map-terrain";
 import { applyMapProjection } from "@/lib/map-projection";
@@ -326,7 +325,6 @@ function LTmap({
   homeLocation,
   onMapCenter,
   showMapControls = false,
-  laserView = false,
   onTrackShip,
   onShipSelect,
   liveTrackedShip,
@@ -1790,8 +1788,6 @@ function LTmap({
       zoom: 1.8,
       minZoom: 1.5,
       maxZoom: 18,
-      // Wind particles use one global [-180°, 180°] field. Repeating the
-      // basemap beyond that extent creates a visible copy with no particles.
       renderWorldCopies: false,
       doubleClickZoom: false,
       attributionControl: {
@@ -2929,11 +2925,11 @@ function LTmap({
     const laser = map.getLayer("sat-footprint-laser");
     if (!fill || !line || !laser) return;
     // Keep a subtle coverage tint with a crisp colored perimeter.
-    const showFootprint = showSatCircumference && !laserView;
+    const showFootprint = showSatCircumference;
     map.setLayoutProperty("sat-footprint-fill", "visibility", showFootprint ? "visible" : "none");
     map.setLayoutProperty("sat-footprint-line", "visibility", showFootprint ? "visible" : "none");
     map.setLayoutProperty("sat-footprint-laser", "visibility", "none");
-  }, [mapReady, laserView, activeLayers.rf_coverage, showSatCircumference]);
+  }, [mapReady, activeLayers.rf_coverage, showSatCircumference]);
 
   useEffect(() => {
     if (
@@ -2947,7 +2943,7 @@ function LTmap({
       satLayerRef.current?.setCone(null);
       return;
     }
-    if (!showSatCircumference || laserView) {
+    if (!showSatCircumference) {
       satLayerRef.current?.setCone(null);
       return;
     }
@@ -2983,7 +2979,6 @@ function LTmap({
     setGeo,
     satPlaybackPlaying,
     showSatCircumference,
-    laserView,
   ]);
 
   useEffect(() => {
@@ -3720,7 +3715,7 @@ function LTmap({
             elevationMaskDeg: SATELLITE_COVERAGE_ELEVATION_DEG,
           });
           setGeo("sat-footprint", footprint.features);
-          if (showSatCircumferenceRef.current && !laserView) {
+          if (showSatCircumferenceRef.current) {
             satLayerRef.current?.setCone(
               buildSatelliteHorizonCone(pos.lng, pos.lat, pos.altKm),
               parseColor(color),
@@ -3808,7 +3803,6 @@ function LTmap({
     satPlaybackPlaying,
     satPlaybackTime,
     setGeo,
-    laserView,
   ]);
 
   useEffect(() => {
@@ -3978,7 +3972,6 @@ function LTmap({
           // Keep imagery above the dark basemap fills while leaving satellite
           // markers and other overlays visible above it.
           const firstOverlay = [
-            "wind-particles",
             "day-night-fill",
             "sat-footprint-fill",
             "sat-glow",
@@ -4457,9 +4450,6 @@ function LTmap({
         />
       )}
       {mapReady && showMapControls && <MapControls mapRef={mapRef} />}
-      {mapReady && activeLayers.wind && mapInstance && (
-        <WindLayer map={mapInstance} />
-      )}
       {selectedSat && !isIntelOpen && !showVesselsSlider && (
         <SatelliteCard
           sat={selectedSat}
