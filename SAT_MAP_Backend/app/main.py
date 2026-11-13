@@ -13,7 +13,7 @@ from starlette.middleware.cors import CORSMiddleware
 from .config import settings
 from . import database
 from .endpoints import Endpoints
-from .routers import satellites, maritime, stats, region_dossier, providers, osint, geospatial_video, dashboard
+from .routers import satellites, maritime, stats, region_dossier, providers, osint, geospatial_video, dashboard, weather
 from .services import ais_db, ais_stream, digitraffic_ais, tle_cache
 
 
@@ -26,12 +26,20 @@ async def lifespan(app: FastAPI):
     await osint.open_client()
     await tle_cache.restore_database_cache()
     tle_refresh_task = None
+    wind_refresh_task = None
     try:
         await ais_stream.start()
         await digitraffic_ais.start()
         tle_refresh_task = asyncio.create_task(tle_cache.refresh(), name="tle-refresh")
+        wind_refresh_task = weather.schedule_wind_refresh()
         yield
     finally:
+        if wind_refresh_task is not None:
+            wind_refresh_task.cancel()
+            try:
+                await wind_refresh_task
+            except asyncio.CancelledError:
+                pass
         if tle_refresh_task is not None:
             tle_refresh_task.cancel()
             try:
@@ -92,6 +100,7 @@ app.include_router(providers.router)
 app.include_router(osint.router)
 app.include_router(geospatial_video.router)
 app.include_router(dashboard.router)
+app.include_router(weather.router)
 
 app.add_middleware(
     PrivateNetworkCORSMiddleware,

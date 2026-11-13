@@ -107,6 +107,7 @@ services:
       NODE_ENV: development
       PORT: 7890
       HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_CARTO_BASEMAPS_KEY: ${NEXT_PUBLIC_CARTO_BASEMAPS_KEY:-}
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
       FASTAPI_URL: http://backend:8569

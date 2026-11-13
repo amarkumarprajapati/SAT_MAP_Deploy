@@ -4,7 +4,7 @@ The repository root `compose.yaml` runs the Next.js frontend in development mode
 
 ## Configure and start
 
-Copy `.env.example` to `.env` in the repository root. Set the same strong password for `DATABASE_PASSWORD` and `MYSQL_PASSWORD`, set a separate `MYSQL_ROOT_PASSWORD`, and add provider API keys if needed. Compose uses that one file for deployment settings.
+Copy `.env.example` to `.env` in the repository root. Set the same strong password for `DATABASE_PASSWORD` and `MYSQL_PASSWORD`, set a separate `MYSQL_ROOT_PASSWORD`, and add provider API keys if needed. For CARTO dark map tiles, set `NEXT_PUBLIC_CARTO_BASEMAPS_KEY` to your CARTO Basemaps key. Compose passes it into the frontend; recreate the frontend container after changing it. The key is visible in browser tile requests, so restrict it in the CARTO dashboard.
 
 ```sh
 docker compose up -d --build

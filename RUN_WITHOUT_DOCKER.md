@@ -64,6 +64,8 @@ python run.py --reload
 
 ## 🌐 3. Start the Frontend (`SAT_MAP_Frontend`)
 
+For CARTO dark tiles, put `NEXT_PUBLIC_CARTO_BASEMAPS_KEY=your-key` in `SAT_MAP_Frontend/.env.local` before starting Next.js. The key is public in browser tile requests; restrict it from your CARTO Basemaps dashboard.
+
 Open **Terminal 2** (PowerShell):
 
 ```powershell

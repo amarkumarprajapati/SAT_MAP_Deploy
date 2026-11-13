@@ -138,4 +138,4 @@ export const api = {
 
 export const styleUrl = '/dark-matter-style.json';
 export const mapImageryTileUrl =
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+  '/api/map/imagery/{z}/{y}/{x}';

@@ -27,6 +27,7 @@ import MapPopups, { createHomeMarkerPopup } from "@/components/MapPopups";
 import { attachTerrain } from "@/lib/map-terrain";
 import { applyMapProjection } from "@/lib/map-projection";
 import { updateImageryPolarCaps } from "@/lib/polar-caps";
+import { createWindField, type WindPoint } from "@/lib/wind-field";
 import { SatelliteRow, LTmapProps } from "@/lib/map.types";
 import {
   orbitPath,
@@ -365,6 +366,124 @@ function LTmap({
   }, [onCountryClick]);
   const [mapReady, setMapReady] = useState(false);
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
+  const windEnabled = !!activeLayers.wind;
+
+  // Render the same cached global wind field on MapLibre's true globe. Keeping
+  // particles in geographic coordinates makes the flow follow globe rotation.
+  useEffect(() => {
+    if (!mapReady || !mapInstance || !windEnabled) return;
+    let disposed = false;
+    let frame = 0;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
+    let canvas: HTMLCanvasElement | undefined;
+    let ctx: CanvasRenderingContext2D | null = null;
+    let field: ReturnType<typeof createWindField> | undefined;
+    let particles: Array<{ lng: number; lat: number; age: number }> = [];
+    const map = mapInstance;
+
+    const resize = () => {
+      if (!canvas) return;
+      const { width, height } = map.getContainer().getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      canvas.width = Math.max(1, Math.round(width * dpr));
+      canvas.height = Math.max(1, Math.round(height * dpr));
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+      particles = Array.from({ length: Math.max(500, Math.min(1000, Math.round(width * height / 1500))) }, () => ({
+        lng: Math.random() * 360 - 180,
+        lat: Math.random() * 170 - 85,
+        age: Math.random() * 100,
+      }));
+    };
+
+    const animate = () => {
+      if (disposed || !ctx || !canvas || !field || document.hidden) {
+        if (!disposed) frame = requestAnimationFrame(animate);
+        return;
+      }
+      const size = map.getContainer().getBoundingClientRect();
+      ctx.clearRect(0, 0, size.width, size.height);
+      const center = map.getCenter();
+      const centerLat = center.lat * Math.PI / 180;
+      const centerLng = center.lng * Math.PI / 180;
+      ctx.strokeStyle = "rgba(225, 247, 255, 0.78)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (const p of particles) {
+        const from = map.project([p.lng, p.lat]);
+        const pointLat = p.lat * Math.PI / 180;
+        const pointLng = p.lng * Math.PI / 180;
+        const visible = Math.sin(centerLat) * Math.sin(pointLat) + Math.cos(centerLat) * Math.cos(pointLat) * Math.cos(pointLng - centerLng) > 0.015;
+        if (visible && from.x >= 0 && from.y >= 0 && from.x <= size.width && from.y <= size.height) {
+          const vector = field(p.lng, p.lat);
+          const factor = 0.002;
+          const east = vector.u * factor / Math.max(0.25, Math.cos(pointLat));
+          const north = vector.v * factor;
+          p.lng += east;
+          if (p.lng > 180) p.lng -= 360;
+          else if (p.lng < -180) p.lng += 360;
+          p.lat = Math.max(-89, Math.min(89, p.lat + north));
+          const to = map.project([p.lng, p.lat]);
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(to.x, to.y);
+        } else if (!visible) {
+          p.age = 120;
+        }
+        p.age += 1;
+        if (p.age > 120) {
+          p.lng = Math.random() * 360 - 180;
+          p.lat = Math.random() * 170 - 85;
+          p.age = 0;
+        }
+      }
+      ctx.stroke();
+      frame = requestAnimationFrame(animate);
+    };
+
+    canvas = document.createElement("canvas");
+    canvas.className = "globe-wind-particles";
+    Object.assign(canvas.style, { position: "absolute", inset: "0", zIndex: "1", pointerEvents: "none" });
+    map.getContainer().appendChild(canvas);
+    ctx = canvas.getContext("2d");
+    resize();
+    map.on("resize", resize);
+    document.addEventListener("visibilitychange", resize);
+
+    const load = async () => {
+      controller = new AbortController();
+      try {
+        const response = await fetch("/api/weather/wind-data?grid=global", { signal: controller.signal, cache: "no-store" });
+        if (!response.ok) {
+          if (response.status === 503) {
+            retry = setTimeout(() => void load(), 10_000);
+            return;
+          }
+          throw new Error(`Wind API returned ${response.status}`);
+        }
+        const body = await response.json() as { points?: WindPoint[] };
+        if (!body.points?.length) throw new Error("Wind API returned no points");
+        field = createWindField(body.points);
+        if (!disposed) frame = requestAnimationFrame(animate);
+      } catch (error) {
+        if (disposed || (error instanceof Error && error.name === "AbortError")) return;
+        console.error("[Wind] Globe loading failed:", error);
+        retry = setTimeout(() => void load(), 30_000);
+      }
+    };
+    void load();
+
+    return () => {
+      disposed = true;
+      controller?.abort();
+      if (retry) clearTimeout(retry);
+      cancelAnimationFrame(frame);
+      map.off("resize", resize);
+      document.removeEventListener("visibilitychange", resize);
+      canvas?.remove();
+    };
+  }, [mapReady, mapInstance, windEnabled]);
   const areaStartRef = useRef<[number, number] | null>(null);
   const areaDrawModeRef = useRef(areaDrawMode);
   useEffect(() => {
@@ -1788,6 +1907,13 @@ function LTmap({
       zoom: 1.8,
       minZoom: 1.5,
       maxZoom: 18,
+      // Retain a few neighboring zoom levels so globe rotation does not evict
+      // and immediately re-fetch the same ArcGIS tiles.
+      maxTileCacheZoomLevels: 7,
+      fadeDuration: 0,
+      refreshExpiredTiles: false,
+      // The initial low resolution remains visible while higher detail arrives.
+      // Raster cross-fades are disabled below to avoid the washed-out look.
       renderWorldCopies: false,
       doubleClickZoom: false,
       attributionControl: {
@@ -3982,7 +4108,11 @@ function LTmap({
               id: "satellite-layer",
               type: "raster",
               source: "satellite-tiles",
-              paint: { "raster-opacity": 1 },
+              paint: {
+                "raster-opacity": 1,
+                "raster-fade-duration": 0,
+                "raster-resampling": "linear",
+              },
             },
             firstOverlay,
           );

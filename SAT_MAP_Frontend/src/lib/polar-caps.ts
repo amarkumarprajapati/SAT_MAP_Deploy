@@ -1,11 +1,10 @@
 import type { Map } from 'maplibre-gl';
-import { generateFootprintFeatures } from './footprint-circle';
 
 const SOURCE = 'imagery-polar-caps';
 const LAYER = 'imagery-polar-cap-fill';
-const FADE_STEPS = 128;
-const FADE_START_LAT = 83.5;
-const FADE_END_LAT = 85.04;
+const FADE_STEPS = 12;
+const FADE_START_LAT = 84;
+const FADE_END_LAT = 85.05112878;
 
 /** Smooth display fills over the unsupported polar ends of Mercator imagery. */
 export function updateImageryPolarCaps(map: Map, visible: boolean) {
@@ -21,21 +20,21 @@ export function updateImageryPolarCaps(map: Map, visible: boolean) {
         const opacity = (targetOpacity - previousOpacity) / (1 - previousOpacity);
         previousOpacity = targetOpacity;
         const latitude = FADE_START_LAT + (FADE_END_LAT - FADE_START_LAT) * t;
-        const angle = (90 - latitude) * Math.PI / 180;
-        const altitude = 6371 * (1 / Math.cos(angle) - 1);
-        const cap = generateFootprintFeatures({ lng: 0, lat: sign * 90, alt: altitude });
-        for (const feature of cap.features) {
-          if (feature.geometry.type !== 'Polygon') continue;
-          features.push({
-            ...feature,
-            properties: {
-              color: sign > 0 ? '#064557' : '#f1f6fc',
-              // Account for alpha compositing of all the enclosing caps.
-              opacity,
-              order: step,
-            },
-          });
+        const ring: number[][] = [];
+        for (let longitude = -180; longitude <= 180; longitude += 10) {
+          ring.push([longitude, sign * latitude]);
         }
+        ring.push(ring[0]);
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [ring] },
+          properties: {
+            color: sign > 0 ? '#064557' : '#f1f6fc',
+            // Account for alpha compositing of all the enclosing caps.
+            opacity,
+            order: step,
+          },
+        });
       }
     }
     map.addSource(SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features } });
